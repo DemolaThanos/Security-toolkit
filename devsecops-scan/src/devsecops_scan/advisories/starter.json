@@ -1,0 +1,61 @@
+{
+  "vulnerabilities": [
+    {
+      "id": "GHSA-9wx4-h78v-vm56",
+      "summary": "Requests Session object does not verify requests after making the first request with verify=False",
+      "database_specific": {"severity": "MODERATE"},
+      "references": [
+        {"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-9wx4-h78v-vm56"}
+      ],
+      "affected": [
+        {
+          "package": {"ecosystem": "PyPI", "name": "requests"},
+          "ranges": [
+            {
+              "type": "ECOSYSTEM",
+              "events": [{"introduced": "0"}, {"fixed": "2.32.0"}]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-9hjg-9r4m-mvj7",
+      "summary": "Requests vulnerable to .netrc credentials leak via malicious URLs",
+      "database_specific": {"severity": "MODERATE"},
+      "references": [
+        {"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-9hjg-9r4m-mvj7"}
+      ],
+      "affected": [
+        {
+          "package": {"ecosystem": "PyPI", "name": "requests"},
+          "ranges": [
+            {
+              "type": "ECOSYSTEM",
+              "events": [{"introduced": "0"}, {"fixed": "2.32.4"}]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-gc5v-m9x4-r6x2",
+      "summary": "Requests has insecure temp file reuse in extract_zipped_paths()",
+      "database_specific": {"severity": "MODERATE"},
+      "references": [
+        {"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-gc5v-m9x4-r6x2"}
+      ],
+      "affected": [
+        {
+          "package": {"ecosystem": "PyPI", "name": "requests"},
+          "ranges": [
+            {
+              "type": "ECOSYSTEM",
+              "events": [{"introduced": "0"}, {"fixed": "2.33.0"}]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

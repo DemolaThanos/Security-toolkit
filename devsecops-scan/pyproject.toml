@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools==75.3.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devsecops-scan"
+version = "0.1.0"
+description = "Secret, SAST, dependency, and passive DAST checks for a repository."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Ademola (Hammed) Gbadamosi" }]
+dependencies = ["packaging==26.3"]
+
+[project.optional-dependencies]
+s3 = ["boto3==1.43.118"]
+dev = [
+  "boto3==1.43.118",
+  "mypy==2.4.0",
+  "pytest==9.1.1",
+  "ruff==0.17.2",
+]
+
+[project.scripts]
+devsecops-scan = "devsecops_scan.cli:cli"
+
+[project.urls]
+Repository = "https://github.com/DemolaThanos/Security-toolkit"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+devsecops_scan = ["py.typed", "advisories/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["devsecops_scan"]
+warn_unused_ignores = true

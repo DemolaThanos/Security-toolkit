@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools==75.3.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "k8s-harden"
+version = "0.1.0"
+description = "Lint Kubernetes manifests for RBAC, secret, and workload-isolation mistakes."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Ademola (Hammed) Gbadamosi" }]
+dependencies = ["PyYAML==6.0.3"]
+
+[project.optional-dependencies]
+dev = ["mypy==2.4.0", "pytest==9.1.1", "ruff==0.17.2"]
+
+[project.scripts]
+k8s-harden = "k8s_harden.cli:cli"
+
+[project.urls]
+Repository = "https://github.com/DemolaThanos/Security-toolkit"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+k8s_harden = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["k8s_harden"]
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["yaml"]
+ignore_missing_imports = true
