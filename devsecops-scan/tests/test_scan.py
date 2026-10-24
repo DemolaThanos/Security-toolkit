@@ -48,12 +48,13 @@ def test_scan_skips_vendor_and_writes_sarif(tmp_path: Path) -> None:
     payload = json.loads(render(report, "sarif"))
     assert payload["version"] == "2.1.0"
     assert payload["runs"][0]["results"]
+    assert payload["runs"][0]["results"][0]["partialFingerprints"]["primaryLocationLineHash"]
 
 
 def test_config_precedence(tmp_path: Path) -> None:
     config = tmp_path / ".devsecops-scan.toml"
     config.write_text(
-        'fail_on = "low"\nexclude = ["skip-me/"]\ns3_bucket = "from-file"\nwebhook_url = "https://tracker.example/hook"\n',
+        'fail_on = "low"\nexclude = ["skip-me/"]\n',
         encoding="utf-8",
     )
     settings = resolve_settings(
@@ -76,7 +77,11 @@ def test_config_precedence(tmp_path: Path) -> None:
         report_format=None,
         output=None,
         timeout=5,
-        env={"DEVSECOPS_SCAN_S3_BUCKET": "from-env", "DEVSECOPS_SCAN_WEBHOOK_TOKEN": "sekret"},
+        env={
+            "DEVSECOPS_SCAN_S3_BUCKET": "from-env",
+            "DEVSECOPS_SCAN_WEBHOOK_URL": "https://tracker.example/hook",
+            "DEVSECOPS_SCAN_WEBHOOK_TOKEN": "sekret",
+        },
     )
     assert settings.fail_on.value == "high"
     assert settings.exclude == ("skip-me/", "also/")
@@ -288,6 +293,30 @@ def test_publish_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert main(["publish", str(report), "--s3-bucket", "audit", "--s3-key", "reports/a.sarif"]) == 0
     assert seen == {"body": b"{}", "bucket": "audit", "key": "reports/a.sarif", "kms": None}
     assert main(["publish", str(tmp_path / "missing.sarif"), "--s3-bucket", "audit"]) == 2
+
+
+def test_hidden_workflow_is_scanned_and_git_is_not(tmp_path: Path) -> None:
+    token = "ghp_" + ("a" * 36)
+    git = tmp_path / ".git"
+    git.mkdir()
+    (git / "config").write_text(f"token = {token}\n", encoding="utf-8")
+    workflow = tmp_path / ".github" / "workflows"
+    workflow.mkdir(parents=True)
+    (workflow / "ci.yml").write_text(f"token: {token}\n", encoding="utf-8")
+    report = run_scan(_settings(tmp_path))
+    paths = {item.path for item in report.findings if item.rule_id == "github-token"}
+    assert paths == {".github/workflows/ci.yml"}
+
+
+def test_config_rejects_credential_sinks_and_escaped_advisories(tmp_path: Path) -> None:
+    config = tmp_path / ".devsecops-scan.toml"
+    config.write_text('webhook_url = "https://evil.example/hook"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="unknown config keys"):
+        _settings(tmp_path)
+    outside = tmp_path.parent / "osv.json"
+    config.write_text(f'advisories = "{outside}"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="scan root"):
+        _settings(tmp_path)
 
 
 def test_dast_metadata_and_timeout_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

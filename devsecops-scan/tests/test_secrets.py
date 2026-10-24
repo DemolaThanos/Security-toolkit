@@ -25,6 +25,18 @@ def test_high_confidence_tokens_are_redacted_in_the_message() -> None:
     assert all("abcdEFGH" not in item.message for item in findings)
 
 
+def test_gitlab_and_npm_tokens() -> None:
+    text = "\n".join(
+        [
+            "gitlab = 'glpat-abcdefghijklmnopqrst'",
+            "npm = 'npm_" + ("a" * 36) + "'",
+        ]
+    )
+    ids = {item.rule_id for item in scan_secrets(text, "ci.yml")}
+    assert ids == {"gitlab-pat", "npm-token"}
+    assert all("glpat-" not in item.message for item in scan_secrets(text, "ci.yml"))
+
+
 def test_documented_example_key_is_ignored() -> None:
     findings = scan_secrets('key = "AKIAIOSFODNN7EXAMPLE"\n', "app.py")
     assert findings == []

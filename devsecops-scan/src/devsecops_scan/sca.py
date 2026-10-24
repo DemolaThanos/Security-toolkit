@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import stat
 from dataclasses import dataclass
@@ -341,8 +342,113 @@ def _severity(record: dict[str, object]) -> Severity:
             try:
                 return parse_severity(label)
             except ValueError:
-                logger.debug("unknown advisory severity %s", label)
-    return Severity.MEDIUM
+                logger.warning("unknown advisory severity %s", label)
+    scored = _cvss_severity(record.get("severity"))
+    if scored is not None:
+        return scored
+    logger.warning("advisory %s has no usable severity; treating it as high", record.get("id"))
+    return Severity.HIGH
+
+
+_CVSS_V3 = re.compile(r"^CVSS:3\.[01]/(.+)$")
+_AV = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2}
+_AC = {"L": 0.77, "H": 0.44}
+_UI = {"N": 0.85, "R": 0.62}
+_CIA = {"H": 0.56, "L": 0.22, "N": 0.0}
+_PR_UNCHANGED = {"N": 0.85, "L": 0.62, "H": 0.27}
+_PR_CHANGED = {"N": 0.85, "L": 0.68, "H": 0.5}
+
+
+def _cvss_severity(raw: object) -> Severity | None:
+    if not isinstance(raw, list):
+        return None
+    scores: list[float] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        score = item.get("score")
+        if not isinstance(score, str):
+            continue
+        parsed = _cvss_score(score)
+        if parsed is not None:
+            scores.append(parsed)
+    if not scores:
+        return None
+    return _score_to_severity(max(scores))
+
+
+def _cvss_score(score: str) -> float | None:
+    text = score.strip()
+    matched = _CVSS_V3.match(text)
+    if matched:
+        return _cvss_v3_base(matched.group(1))
+    if text.startswith("CVSS:"):
+        return None
+    return _numeric_score(text)
+
+
+def _cvss_v3_base(vector: str) -> float | None:
+    metrics: dict[str, str] = {}
+    for part in vector.split("/"):
+        if ":" not in part:
+            return None
+        key, value = part.split(":", 1)
+        metrics[key] = value
+    try:
+        attack = _AV[metrics["AV"]]
+        complexity = _AC[metrics["AC"]]
+        interaction = _UI[metrics["UI"]]
+        scope = metrics["S"]
+        confidentiality = _CIA[metrics["C"]]
+        integrity = _CIA[metrics["I"]]
+        availability = _CIA[metrics["A"]]
+    except KeyError:
+        return None
+    privileges = _PR_CHANGED if scope == "C" else _PR_UNCHANGED if scope == "U" else None
+    if privileges is None or metrics["PR"] not in privileges:
+        return None
+    privilege = privileges[metrics["PR"]]
+    impact_sub = 1 - ((1 - confidentiality) * (1 - integrity) * (1 - availability))
+    # The two CVSS impact formulas stay on separate lines; a ternary is harder to check.
+    if scope == "U":  # noqa: SIM108
+        impact = 6.42 * impact_sub
+    else:
+        impact = 7.52 * (impact_sub - 0.029) - 3.25 * ((impact_sub - 0.02) ** 15)
+    if impact <= 0:
+        return 0.0
+    exploitability = 8.22 * attack * complexity * privilege * interaction
+    raw = impact + exploitability if scope == "U" else 1.08 * (impact + exploitability)
+    return min(10.0, _roundup(raw))
+
+
+def _roundup(value: float) -> float:
+    """Smallest one-decimal value greater than or equal to `value` (CVSS v3.1)."""
+    if value <= 0:
+        return 0.0
+    scaled = math.ceil(value * 10 - 1e-9)
+    return scaled / 10
+
+
+def _numeric_score(text: str) -> float | None:
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    if 0 <= value <= 10:
+        return value
+    return None
+
+
+def _score_to_severity(score: float) -> Severity:
+    if score >= 9.0:
+        return Severity.CRITICAL
+    if score >= 7.0:
+        return Severity.HIGH
+    if score >= 4.0:
+        return Severity.MEDIUM
+    if score > 0:
+        return Severity.LOW
+    return Severity.INFO
 
 
 def _ranges(raw: object) -> list[tuple[RangeEvent, ...]]:

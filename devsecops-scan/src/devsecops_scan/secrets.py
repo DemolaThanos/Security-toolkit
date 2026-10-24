@@ -77,6 +77,18 @@ _RULES = (
         "PyPI API token",
     ),
     _rule(
+        "gitlab-pat",
+        Severity.HIGH,
+        r"\bglpat-[A-Za-z0-9\-_]{20,}\b",
+        "GitLab personal access token",
+    ),
+    _rule(
+        "npm-token",
+        Severity.HIGH,
+        r"\bnpm_[A-Za-z0-9]{36}\b",
+        "npm access token",
+    ),
+    _rule(
         "private-key",
         Severity.HIGH,
         r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----",

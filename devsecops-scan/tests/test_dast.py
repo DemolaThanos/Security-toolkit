@@ -106,6 +106,32 @@ def test_tls_failure_does_not_disable_verification() -> None:
     assert calls == [True]
 
 
+def test_redirect_hosts_are_resolved_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    lookups: list[str] = []
+    calls: list[str] = []
+
+    def fake_dns(host: str, *args: object, **kwargs: object) -> list[tuple[object, ...]]:
+        del args, kwargs
+        lookups.append(host)
+        ip = "10.0.0.8" if lookups.count(host) > 1 else "93.184.216.34"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 0))]
+
+    def connector(scheme: str, host: str, port: int, timeout: float, verify: bool) -> _Conn:
+        del scheme, port, timeout
+        assert verify is True
+        calls.append(host)
+        if host == "app.example":
+            return _Conn(302, [("Location", "/next" if len(calls) == 1 else "http://cdn.example/a")])
+        if calls.count("cdn.example") == 1:
+            return _Conn(302, [("Location", "http://cdn.example/b")])
+        return _Conn(200, [("strict-transport-security", "max-age=31536000")])
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_dns)
+    result = fetch_headers("http://app.example/start", timeout=1, connector=connector)
+    assert result.status == 200
+    assert lookups == ["app.example", "cdn.example"]
+
+
 def test_connection_stays_on_the_checked_address(monkeypatch: pytest.MonkeyPatch) -> None:
     lookups: list[str] = []
 

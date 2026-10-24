@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "devsecops-scan"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Secret, SAST, dependency, and passive DAST checks for a repository."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,6 +27,9 @@ devsecops-scan = "devsecops_scan.cli:cli"
 [project.urls]
 Repository = "https://github.com/DemolaThanos/Security-toolkit"
 
+[tool.setuptools.dynamic]
+version = { attr = "devsecops_scan.__version__" }
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -43,7 +46,10 @@ line-length = 120
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
 
 [tool.mypy]
 python_version = "3.11"

@@ -20,13 +20,9 @@ _KEYS = frozenset(
         "format",
         "max_bytes",
         "require_pins",
-        "s3_bucket",
-        "s3_key",
-        "s3_kms_key_id",
         "sast",
         "sca",
         "secrets",
-        "webhook_url",
     }
 )
 
@@ -105,24 +101,18 @@ def resolve_settings(
         secrets=_flag(data.get("secrets"), True) and not no_secrets,
         sast=_flag(data.get("sast"), True) and not no_sast,
         sca=_flag(data.get("sca"), True) and not no_sca,
-        require_pins=_flag(data.get("require_pins"), False) if require_pins is None else require_pins,
-        advisories=_advisories(advisories, data.get("advisories"), config_dir),
+        require_pins=_flag(data.get("require_pins"), True) if require_pins is None else require_pins,
+        advisories=_advisories(advisories, data.get("advisories"), config_dir, root),
         dast_url=dast_url,
         dast_authorized=dast_authorized,
-        s3_bucket=_blank_to_none(
-            _pick_optional(s3_bucket, environment.get("DEVSECOPS_SCAN_S3_BUCKET"), data.get("s3_bucket"))
-        ),
-        s3_key=_blank_to_none(_pick_optional(s3_key, environment.get("DEVSECOPS_SCAN_S3_KEY"), data.get("s3_key"))),
+        # Bucket and webhook destinations use ambient credentials. A file in the
+        # tree is untrusted, so those values come only from the CLI or the environment.
+        s3_bucket=_blank_to_none(_pick_optional(s3_bucket, environment.get("DEVSECOPS_SCAN_S3_BUCKET"), None)),
+        s3_key=_blank_to_none(_pick_optional(s3_key, environment.get("DEVSECOPS_SCAN_S3_KEY"), None)),
         s3_kms_key_id=_blank_to_none(
-            _pick_optional(
-                s3_kms_key_id,
-                environment.get("DEVSECOPS_SCAN_S3_KMS_KEY_ID"),
-                data.get("s3_kms_key_id"),
-            )
+            _pick_optional(s3_kms_key_id, environment.get("DEVSECOPS_SCAN_S3_KMS_KEY_ID"), None)
         ),
-        webhook_url=_blank_to_none(
-            _pick_optional(webhook_url, environment.get("DEVSECOPS_SCAN_WEBHOOK_URL"), data.get("webhook_url"))
-        ),
+        webhook_url=_blank_to_none(_pick_optional(webhook_url, environment.get("DEVSECOPS_SCAN_WEBHOOK_URL"), None)),
         webhook_token=_blank_to_none(environment.get("DEVSECOPS_SCAN_WEBHOOK_TOKEN")),
         report_format=report_fmt,
         output=Path(output) if output else None,
@@ -137,6 +127,12 @@ def _default_config(root: Path) -> Path | None:
 
 
 def _load_toml(path: Path) -> dict[str, object]:
+    try:
+        info = path.stat()
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
+    if info.st_size > 1_000_000:
+        raise ConfigError(f"{path} is larger than 1000000 bytes")
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -164,7 +160,7 @@ def _excludes(configured: object, extra: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(values)
 
 
-def _advisories(cli: str | None, configured: object, config_dir: Path) -> Path | None:
+def _advisories(cli: str | None, configured: object, config_dir: Path, root: Path) -> Path | None:
     if cli:
         return Path(cli).expanduser()
     if configured is None:
@@ -174,7 +170,13 @@ def _advisories(cli: str | None, configured: object, config_dir: Path) -> Path |
     path = Path(configured).expanduser()
     if not path.is_absolute():
         path = config_dir / path
-    return path
+    scan_root = (root if root.is_dir() else root.parent).resolve()
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(scan_root)
+    except (OSError, ValueError) as exc:
+        raise ConfigError("advisories path must stay inside the scan root") from exc
+    return resolved
 
 
 def _pick_str(cli: str | None, configured: object, default: str, name: str) -> str:

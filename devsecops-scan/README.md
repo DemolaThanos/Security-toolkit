@@ -20,7 +20,7 @@ devsecops-scan scan . --fail-on high --format sarif --output devsecops-scan.sari
 devsecops-scan scan . --dast-url https://app.example --i-am-authorized
 ```
 
-`--i-am-authorized` (or `DEVSECOPS_SCAN_DAST_AUTHORIZED=1`) is required before any DAST request. The scanner resolves the host once and connects to those addresses. It refuses link-local addresses, including cloud metadata, and non-canonical spellings such as hex or octal. A TLS failure stays a failure: verification is not turned off for a second try. Redirects may continue to another public host, up to five hops. A redirect into a private or link-local address is refused.
+`--i-am-authorized` (or `DEVSECOPS_SCAN_DAST_AUTHORIZED=1`) is required before any DAST request. The scanner resolves each host once and connects to those addresses. A redirect back to a host it already resolved reuses that answer, so a second DNS reply cannot move the connection. It refuses link-local addresses, including cloud metadata, and non-canonical spellings such as hex or octal. A TLS failure stays a failure: verification is not turned off for a second try. Redirects may continue to another public host, up to five hops. A redirect into a private or link-local address is refused.
 
 Exit codes: `0` nothing at or above the threshold, `1` findings, `2` the scan did not finish.
 
@@ -35,15 +35,17 @@ max_bytes = 1000000
 secrets = true
 sast = true
 sca = true
-require_pins = false
+require_pins = true
 advisories = "advisories/osv.json"
-s3_bucket = ""
-webhook_url = ""
 ```
 
-CLI flags override the file. `DEVSECOPS_SCAN_S3_BUCKET`, `DEVSECOPS_SCAN_S3_KEY`, `DEVSECOPS_SCAN_S3_KMS_KEY_ID`, and `DEVSECOPS_SCAN_WEBHOOK_URL` override the file when the flag is omitted. The webhook bearer token is read only from `DEVSECOPS_SCAN_WEBHOOK_TOKEN` so it is not committed. Webhooks are HTTPS, the connection is pinned the same way as DAST, and redirects are not followed. S3 objects are encrypted with SSE-S3, or with the KMS key id when one is set. Bucket and key names are checked before the upload.
+CLI flags override the file. `require_pins` defaults to true, so a dependency with no exact version is reported at medium. `--allow-unpinned` turns that report off. An advisory with no severity label and no CVSS v3 score is treated as high. A CVSS v3 base score is used when the feed does not include a label.
 
-A line containing `devsecops-scan: ignore` is skipped. `node_modules`, `.git`, virtualenvs, and `vendor` are not walked. Symlinks that resolve outside the scan root are skipped. The walk stops after 50,000 files. `-r` and `-c` lines in `requirements.txt` are read only when the included file stays inside that root. `go.mod` `replace` directives are what get checked when they name a module and a version.
+S3 and webhook destinations are not read from the config file. A file in the tree is untrusted, and those destinations are sent with ambient credentials. Set `DEVSECOPS_SCAN_S3_BUCKET`, `DEVSECOPS_SCAN_S3_KEY`, `DEVSECOPS_SCAN_S3_KMS_KEY_ID`, and `DEVSECOPS_SCAN_WEBHOOK_URL`, or pass the flags. The webhook bearer token is read only from `DEVSECOPS_SCAN_WEBHOOK_TOKEN`. Webhooks are HTTPS, the connection is pinned the same way as DAST, and redirects are not followed. S3 objects are encrypted with SSE-S3, or with the KMS key id when one is set. Bucket and key names are checked before the upload. `DEVSECOPS_SCAN_LOG_FORMAT=json` writes one JSON object per log line.
+
+An `advisories` path in the config file has to stay inside the scan root. `--advisories` on the command line may point anywhere the operator can read.
+
+A line containing `devsecops-scan: ignore` is skipped. `node_modules`, `.git`, virtualenvs, tool caches, and `vendor` are not walked. Other hidden directories, including `.github`, are scanned. Symlinks that resolve outside the scan root are skipped. The walk stops after 50,000 files. Files over `max_bytes` are skipped and counted. `-r` and `-c` lines in `requirements.txt` are read only when the included file stays inside that root. `go.mod` `replace` directives are what get checked when they name a module and a version. Lockfiles are still checked for secrets.
 
 ## Advisories
 
@@ -76,9 +78,11 @@ jobs:
 
 ## Rules
 
-Secret rules match AWS key ids, GitHub tokens, Slack tokens and webhooks, Stripe live keys, PyPI tokens, private-key blocks, and credential assignments. The AWS documentation example key is ignored.
+Secret rules match AWS key ids, GitHub tokens, GitLab personal access tokens, npm tokens, Slack tokens and webhooks, Stripe live keys, PyPI tokens, private-key blocks, and credential assignments. The AWS documentation example key is ignored. Finding messages do not include the matched secret.
 
-SAST rules are limited to `eval`/`exec`, `shell=True`, unsafe `yaml.load`, `pickle`, `verify=False`, string-built SQL, `innerHTML`, `dangerouslySetInnerHTML`, and JWT algorithm `none`.
+SAST rules are limited to `eval`/`exec`, `shell=True`, `os.system`/`os.popen`, unsafe `yaml.load`, `pickle`, `verify=False`, string-built SQL, `innerHTML`, `dangerouslySetInnerHTML`, and JWT algorithm `none`.
+
+SARIF results include `partialFingerprints.primaryLocationLineHash` so a code-scanning importer can keep a stable identity for a result.
 
 Passive DAST checks HSTS, CSP, `X-Content-Type-Options`, clickjacking controls, and `Referrer-Policy` on the final response.
 

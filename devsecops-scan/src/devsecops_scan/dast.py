@@ -7,11 +7,12 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import SplitResult, urljoin, urlsplit
 
+from devsecops_scan import __version__
 from devsecops_scan.errors import TargetError
 from devsecops_scan.models import Finding, Severity
-from devsecops_scan.net import ResolvedHost, ensure_redirect, open_http, resolve_host
+from devsecops_scan.net import ResolvedHost, ensure_redirect, host_key, open_http, resolve_host
 
-USER_AGENT = "devsecops-scan/0.1.0"
+USER_AGENT = f"devsecops-scan/{__version__}"
 _MAX_REDIRECTS = 5
 _MAX_URL = 2048
 
@@ -60,7 +61,17 @@ def fetch_headers(
         raise TargetError("DAST URL must be http or https and include a host")
     if parts.port is not None and not 1 <= parts.port <= 65535:
         raise TargetError("URL port is out of range")
-    origin = resolve_host(parts.hostname)
+    pins: dict[str, ResolvedHost] = {}
+
+    def pinned(hostname: str) -> ResolvedHost:
+        key = host_key(hostname)
+        found = pins.get(key)
+        if found is None:
+            found = resolve_host(hostname)
+            pins[key] = found
+        return found
+
+    origin = pinned(parts.hostname)
     current = url
     for hop in range(_MAX_REDIRECTS + 1):
         target = urlsplit(current)
@@ -68,7 +79,9 @@ def fetch_headers(
             raise TargetError("redirect target is not an http(s) URL")
         if target.port is not None and not 1 <= target.port <= 65535:
             raise TargetError("URL port is out of range")
-        resolved = origin if hop == 0 and _same_host(parts.hostname, target.hostname) else resolve_host(target.hostname)
+        # One lookup per host. A redirect back to a host already checked must not
+        # take a second DNS answer (rebinding onto a link-local or private address).
+        resolved = pinned(target.hostname)
         if hop:
             ensure_redirect(origin.host_class, resolved)
         status, headers = _request(

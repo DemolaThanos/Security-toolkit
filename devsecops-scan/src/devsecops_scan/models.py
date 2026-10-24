@@ -71,6 +71,7 @@ class Finding:
 class ScanReport:
     findings: tuple[Finding, ...]
     files_scanned: int
+    files_skipped: int = 0
 
     def failing(self, threshold: Severity) -> tuple[Finding, ...]:
         return tuple(item for item in self.findings if meets_threshold(item.severity, threshold))
