@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     verbosity = int(args.verbose)
     try:
-        configure_logging(verbosity)
+        configure_logging(verbosity, _log_format())
         if args.command != "inspect":
             parser.print_help(sys.stderr)
             return 2
@@ -65,6 +65,15 @@ def main(argv: list[str] | None = None) -> int:
 
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
+
+
+def _log_format() -> str:
+    value = os.environ.get("AUTHRECON_LOG_FORMAT", "text").strip().lower()
+    if not value:
+        return "text"
+    if value not in {"text", "json"}:
+        raise ReconError("AUTHRECON_LOG_FORMAT must be text or json")
+    return value
 
 
 def _parser() -> argparse.ArgumentParser:

@@ -142,7 +142,7 @@ def test_redirect_to_metadata_is_not_followed() -> None:
     monkey = pytest.MonkeyPatch()
     monkey.setattr(socket, "getaddrinfo", fake_dns)
     try:
-        with pytest.raises(TargetError, match="link-local"):
+        with pytest.raises(TargetError, match="different host"):
             fetch_headers("https://app.example/", timeout=1, connector=connector)
     finally:
         monkey.undo()
@@ -314,6 +314,57 @@ def test_cookie_and_clickjacking_edges() -> None:
     server = next(item for item in findings if item.rule_id == "server-disclosure")
     assert "\n" not in server.message
     assert "spoof" in server.message
+
+
+def test_http_does_not_retry_when_the_certificate_fails() -> None:
+    import ssl
+
+    calls: list[bool] = []
+
+    def connector(scheme: str, host: str, port: int, timeout: float, verify: bool) -> _Conn:
+        del scheme, host, port, timeout
+        calls.append(verify)
+        raise ssl.SSLCertVerificationError("bad certificate")
+
+    with pytest.raises(TargetError):
+        fetch_headers("https://1.1.1.1/", timeout=1, connector=connector)
+    assert calls == [True]
+
+
+def test_checks_share_one_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    lookups: list[str] = []
+
+    def fake_dns(host: str, *args: object, **kwargs: object) -> list[tuple[object, ...]]:
+        del args, kwargs
+        lookups.append(host)
+        ip = "93.184.216.34" if len(lookups) == 1 else "10.1.1.1"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 0))]
+
+    seen: list[object] = []
+
+    def fake_connect(address: tuple[object, ...], timeout: float = 0, source_address: object = None) -> object:
+        del timeout, source_address
+        seen.append(address[0])
+        raise TimeoutError()
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_dns)
+    monkeypatch.setattr(socket, "create_connection", fake_connect)
+    report = inspect("https://app.example/", authorized=True, timeout=1, ports=(443,))
+    assert lookups == ["app.example"]
+    assert seen
+    assert set(seen) == {"93.184.216.34"}
+    assert any(item.rule_id == "http-unreachable" for item in report.findings)
+
+
+def test_host_prefix_cookie() -> None:
+    findings, _observations = header_findings((("set-cookie", "__Host-sid=abc"),), scheme="https")
+    assert any(item.rule_id == "cookie-host-prefix" and item.severity.value == "high" for item in findings)
+    good = (
+        ("set-cookie", "__Host-sid=abc; Secure; Path=/; HttpOnly; SameSite=Lax"),
+        *GOOD,
+    )
+    findings, _observations = header_findings(good, scheme="https")
+    assert all(item.rule_id != "cookie-host-prefix" for item in findings)
 
 
 def test_timeout_is_checked_before_dns(monkeypatch: pytest.MonkeyPatch) -> None:

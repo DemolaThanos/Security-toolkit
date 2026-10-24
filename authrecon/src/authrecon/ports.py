@@ -3,9 +3,9 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterable
 
-from authrecon.errors import ConnectError, TargetError
+from authrecon.errors import ConnectError, PolicyError, TargetError
 from authrecon.models import PortResult
-from authrecon.net import connect_pinned, resolve_host
+from authrecon.net import ResolvedHost, connect_pinned, host_key, resolve_host
 
 MAX_PORTS = 32
 _DELAY_SECONDS = 0.2
@@ -53,8 +53,12 @@ def probe_ports(
     timeout: float,
     *,
     sleeper: Callable[[float], None] | None = None,
+    resolved: ResolvedHost | None = None,
 ) -> tuple[PortResult, ...]:
-    resolved = resolve_host(host)
+    pinned = resolved if resolved is not None else resolve_host(host)
+    if resolved is not None and host_key(pinned.name) != host_key(host):
+        raise PolicyError("resolved host does not match the URL")
+    resolved = pinned
     pause = sleeper or time.sleep
     results: list[PortResult] = []
     for index, port in enumerate(ports):

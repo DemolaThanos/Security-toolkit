@@ -4,15 +4,18 @@ import contextlib
 import ssl
 from datetime import UTC, datetime
 
-from authrecon.errors import ConnectError
+from authrecon.errors import ConnectError, PolicyError
 from authrecon.models import TlsInfo
-from authrecon.net import ResolvedHost, connect_pinned, resolve_host
+from authrecon.net import ResolvedHost, connect_pinned, host_key, resolve_host
 
 _LEGACY = (("TLSv1", ssl.TLSVersion.TLSv1), ("TLSv1.1", ssl.TLSVersion.TLSv1_1))
 
 
-def probe_tls(host: str, port: int, timeout: float) -> TlsInfo:
-    resolved = resolve_host(host)
+def probe_tls(host: str, port: int, timeout: float, resolved: ResolvedHost | None = None) -> TlsInfo:
+    pinned = resolved if resolved is not None else resolve_host(host)
+    if resolved is not None and host_key(pinned.name) != host_key(host):
+        raise PolicyError("resolved host does not match the URL")
+    resolved = pinned
     legacy_timeout = min(timeout, 5.0)
     try:
         sock = _handshake(resolved, port, timeout, minimum=ssl.TLSVersion.TLSv1_2, verify=True)
@@ -93,6 +96,7 @@ def _handshake(
         context.verify_mode = ssl.CERT_REQUIRED
         context.load_default_certs()
     else:
+        # Handshake metadata only. This socket is closed before any HTTP request.
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
     raw = connect_pinned(resolved.addresses, port, timeout)
@@ -149,6 +153,7 @@ def _legacy(resolved: ResolvedHost, port: int, timeout: float) -> tuple[tuple[st
 def _legacy_one(resolved: ResolvedHost, port: int, timeout: float, version: ssl.TLSVersion) -> bool | None:
     try:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        # Protocol probe only. No application data is sent on this socket.
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
         context.minimum_version = version
