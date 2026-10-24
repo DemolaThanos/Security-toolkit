@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import posixpath
 import re
 from typing import Any
 
@@ -16,22 +17,20 @@ _POD_PATHS: dict[str, tuple[str, ...]] = {
     "CronJob": ("spec", "jobTemplate", "spec", "template", "spec"),
 }
 
-_SENSITIVE_PATHS = frozenset(
-    {
-        "/",
-        "/etc",
-        "/proc",
-        "/sys",
-        "/var/run",
-        "/run",
-        "/var/run/docker.sock",
-        "/run/docker.sock",
-        "/var/run/containerd/containerd.sock",
-        "/run/containerd/containerd.sock",
-        "/var/run/crio/crio.sock",
-        "/run/crio/crio.sock",
-    }
+# Anything under these directories is the node, not the container.
+_SENSITIVE_ROOTS = (
+    "/etc",
+    "/proc",
+    "/root",
+    "/run",
+    "/sys",
+    "/var/lib/containerd",
+    "/var/lib/docker",
+    "/var/lib/kubelet",
+    "/var/run",
 )
+_DIGEST = re.compile(r"@sha256:[0-9a-fA-F]{64}$")
+_POD_INHERITED = ("runAsGroup", "runAsNonRoot", "runAsUser", "seccompProfile")
 
 _DANGEROUS_CAPS = frozenset(
     {
@@ -130,8 +129,7 @@ def _workload(
             continue
         raw_path = host_path.get("path")
         mounted = raw_path if isinstance(raw_path, str) else ""
-        normalized = mounted.rstrip("/") or "/"
-        if normalized in _SENSITIVE_PATHS or mounted in _SENSITIVE_PATHS:
+        if _sensitive_host_path(mounted):
             add(
                 "host-path-sensitive",
                 Severity.CRITICAL,
@@ -247,9 +245,7 @@ def _secret(
     name: str,
     namespace: str,
 ) -> list[Finding]:
-    del namespace
-    if kind == "SealedSecret":
-        return []
+    del document, kind, namespace
     return [
         Finding(
             "secret-manifest",
@@ -365,14 +361,26 @@ def _pod_location(document: dict[str, Any]) -> str:
 
 
 def _merged_context(pod: dict[str, Any], container: dict[str, Any]) -> dict[str, Any]:
-    merged = dict(_as_dict(pod.get("securityContext")))
-    container_context = _as_dict(container.get("securityContext"))
-    merged.update(container_context)
+    # Kubernetes only inherits identity and seccomp from the pod. privileged,
+    # capabilities, and allowPrivilegeEscalation are container fields.
+    pod_context = _as_dict(pod.get("securityContext"))
+    merged = {key: pod_context[key] for key in _POD_INHERITED if key in pod_context}
+    merged.update(_as_dict(container.get("securityContext")))
     return merged
 
 
 def _ignored(document: dict[str, Any]) -> set[str]:
-    annotations = _as_dict(_as_dict(document.get("metadata")).get("annotations"))
+    found = _annotation_ignores(document.get("metadata"))
+    for keys in (
+        ("spec", "template", "metadata"),
+        ("spec", "jobTemplate", "spec", "template", "metadata"),
+    ):
+        found |= _annotation_ignores(_dig(document, keys))
+    return found
+
+
+def _annotation_ignores(metadata: object) -> set[str]:
+    annotations = _as_dict(_as_dict(metadata).get("annotations"))
     raw = annotations.get("k8s-harden.io/ignore", "")
     if not isinstance(raw, str):
         return set()
@@ -390,9 +398,20 @@ def _meta(document: dict[str, Any]) -> tuple[str, str, str]:
     return kind, name, namespace
 
 
-def _unpinned(image: str) -> bool:
-    if "@sha256:" in image:
+def _sensitive_host_path(mounted: str) -> bool:
+    if not mounted.startswith("/"):
         return False
+    path = posixpath.normpath(mounted)
+    if path == "/":
+        return True
+    return any(path == root or path.startswith(root + "/") for root in _SENSITIVE_ROOTS)
+
+
+def _unpinned(image: str) -> bool:
+    if any(char.isspace() for char in image):
+        return True
+    if "@" in image:
+        return _DIGEST.search(image) is None
     last = image.split("/")[-1]
     if ":" not in last:
         return True

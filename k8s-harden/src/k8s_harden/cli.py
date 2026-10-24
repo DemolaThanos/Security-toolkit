@@ -31,8 +31,8 @@ def main(argv: list[str] | None = None) -> int:
         root = Path(args.path)
         if not root.exists():
             raise LintError(f"path does not exist: {root}")
-        if args.max_bytes is not None and args.max_bytes <= 0:
-            raise LintError("--max-bytes must be positive")
+        if args.max_bytes is not None and (args.max_bytes <= 0 or args.max_bytes > 20_000_000):
+            raise LintError("--max-bytes must be between 1 and 20000000")
         report = lint_path(
             root,
             max_bytes=args.max_bytes or 1_000_000,

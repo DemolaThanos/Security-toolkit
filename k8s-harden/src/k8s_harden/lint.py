@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import stat
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +65,38 @@ def _manifests(root: Path, exclude: tuple[str, ...]) -> list[Path]:
                 continue
             path = Path(dirpath) / name
             relative = path.relative_to(root).as_posix()
-            if any(pattern and (pattern in relative or relative.endswith(pattern)) for pattern in exclude):
+            if _excluded(relative, exclude) or not _contained_file(root, path):
                 continue
             found.append(path)
     return sorted(found)
+
+
+def _excluded(relative: str, patterns: tuple[str, ...]) -> bool:
+    for pattern in patterns:
+        cleaned = pattern.replace("\\", "/").strip().strip("/")
+        if not cleaned or any(char in cleaned for char in "\r\n\x00"):
+            continue
+        if any(char in cleaned for char in "*?["):
+            if fnmatch(relative, cleaned) or fnmatch(Path(relative).name, cleaned):
+                return True
+            continue
+        if relative == cleaned or relative.startswith(cleaned + "/"):
+            return True
+    return False
+
+
+def _contained_file(root: Path, path: Path) -> bool:
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    if stat.S_ISLNK(info.st_mode):
+        try:
+            path.resolve().relative_to(root.resolve())
+        except (OSError, ValueError):
+            return False
+    try:
+        info = path.stat()
+    except OSError:
+        return False
+    return stat.S_ISREG(info.st_mode)

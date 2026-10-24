@@ -20,7 +20,7 @@ devsecops-scan scan . --fail-on high --format sarif --output devsecops-scan.sari
 devsecops-scan scan . --dast-url https://app.example --i-am-authorized
 ```
 
-`--i-am-authorized` (or `DEVSECOPS_SCAN_DAST_AUTHORIZED=1`) is required before any DAST request. The scanner refuses link-local addresses, including cloud metadata, and will not follow a redirect from a public host to a private one.
+`--i-am-authorized` (or `DEVSECOPS_SCAN_DAST_AUTHORIZED=1`) is required before any DAST request. The scanner resolves the host once and connects to those addresses. It refuses link-local addresses, including cloud metadata, and non-canonical spellings such as hex or octal. A TLS failure stays a failure: verification is not turned off for a second try. Redirects may continue to another public host, up to five hops. A redirect into a private or link-local address is refused.
 
 Exit codes: `0` nothing at or above the threshold, `1` findings, `2` the scan did not finish.
 
@@ -41,13 +41,13 @@ s3_bucket = ""
 webhook_url = ""
 ```
 
-CLI flags override the file. `DEVSECOPS_SCAN_S3_BUCKET`, `DEVSECOPS_SCAN_S3_KEY`, `DEVSECOPS_SCAN_S3_KMS_KEY_ID`, and `DEVSECOPS_SCAN_WEBHOOK_URL` override the file when the flag is omitted. The webhook bearer token is read only from `DEVSECOPS_SCAN_WEBHOOK_TOKEN` so it is not committed. S3 objects are encrypted with SSE-S3, or with the KMS key id when one is set.
+CLI flags override the file. `DEVSECOPS_SCAN_S3_BUCKET`, `DEVSECOPS_SCAN_S3_KEY`, `DEVSECOPS_SCAN_S3_KMS_KEY_ID`, and `DEVSECOPS_SCAN_WEBHOOK_URL` override the file when the flag is omitted. The webhook bearer token is read only from `DEVSECOPS_SCAN_WEBHOOK_TOKEN` so it is not committed. Webhooks are HTTPS, the connection is pinned the same way as DAST, and redirects are not followed. S3 objects are encrypted with SSE-S3, or with the KMS key id when one is set. Bucket and key names are checked before the upload.
 
-A line containing `devsecops-scan: ignore` is skipped. `node_modules`, `.git`, virtualenvs, and `vendor` are not walked.
+A line containing `devsecops-scan: ignore` is skipped. `node_modules`, `.git`, virtualenvs, and `vendor` are not walked. Symlinks that resolve outside the scan root are skipped. The walk stops after 50,000 files. `-r` and `-c` lines in `requirements.txt` are read only when the included file stays inside that root. `go.mod` `replace` directives are what get checked when they name a module and a version.
 
 ## Advisories
 
-`src/devsecops_scan/advisories/starter.json` is a small OSV snapshot for `requests` (GHSA-9wx4-h78v-vm56, GHSA-9hjg-9r4m-mvj7, GHSA-gc5v-m9x4-r6x2). Replace it with an export from your own feed. Supported manifests: `requirements.txt` exact `==` pins, npm `package-lock.json` (and exact versions in `package.json` when no lock is present), and `go.mod`.
+`src/devsecops_scan/advisories/starter.json` is a small OSV snapshot for `requests` (GHSA-9wx4-h78v-vm56, GHSA-9hjg-9r4m-mvj7, GHSA-gc5v-m9x4-r6x2). Replace it with an export from your own feed. Affected ranges are walked in order, so a package that was fixed and later reintroduced is still reported. Supported manifests: `requirements.txt` exact `==` pins, npm `package-lock.json` (and exact versions in `package.json` when no lock is present), and `go.mod`.
 
 ## GitHub Actions
 
@@ -64,14 +64,15 @@ Reusable workflow: `.github/workflows/security-scan.yml`.
 ```yaml
 jobs:
   security:
-    uses: DemolaThanos/Security-toolkit/.github/workflows/security-scan.yml@<commit>
+    uses: DemolaThanos/Security-toolkit/.github/workflows/security-scan.yml@<40-hex-sha>
     with:
       fail-on: high
+      toolkit-ref: <same 40-hex-sha>
     secrets:
       aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
 ```
 
-Pin both to a commit. Give the job `id-token: write` only if it assumes a role. The workflow does not embed long-lived cloud keys.
+`toolkit-ref` has to be that commit SHA. A branch name is rejected. The scan path is relative to the caller checkout. The scan job does not request `id-token`. When `s3-bucket` is set, a second job assumes `aws-role-arn` and uploads the SARIF. The workflow does not embed long-lived cloud keys.
 
 ## Rules
 

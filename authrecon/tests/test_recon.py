@@ -177,8 +177,152 @@ def test_inspect_uses_injected_results() -> None:
 
 
 def test_cli_requires_authorization(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+
     def boom(*args: object, **kwargs: object) -> None:
+        calls.append(args)
         raise AssertionError(args)
 
     monkeypatch.setattr(socket, "getaddrinfo", boom)
     assert main(["inspect", "https://example.com"]) == 2
+    assert calls == []
+
+
+def test_authorization_does_not_override_address_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+
+    def connect(*args: object, **kwargs: object) -> None:
+        calls.append(args)
+        raise OSError("refused")
+
+    monkeypatch.setenv("AUTHRECON_AUTHORIZED", "1")
+    monkeypatch.setattr(socket, "create_connection", connect)
+    assert main(["inspect", "http://169.254.169.254/"]) == 2
+    assert calls == []
+
+
+def test_redirects_stay_on_the_named_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def connector(scheme: str, host: str, port: int, timeout: float, verify: bool) -> _Conn:
+        del scheme, port, timeout, verify
+        calls.append(host)
+        if len(calls) == 1:
+            return _Conn(302, [("Location", "https://other.example/next")])
+        return _Conn(200, list(GOOD))
+
+    def fake_dns(host: str, *args: object, **kwargs: object) -> list[tuple[object, ...]]:
+        del args, kwargs
+        addresses = {"app.example": "93.184.216.34", "other.example": "93.184.216.35"}
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (addresses[host], 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_dns)
+    with pytest.raises(TargetError, match="different host"):
+        fetch_headers("https://app.example/", timeout=1, connector=connector)
+    assert calls == ["app.example"]
+
+    calls.clear()
+
+    def same_host(scheme: str, host: str, port: int, timeout: float, verify: bool) -> _Conn:
+        del scheme, port, timeout, verify
+        calls.append(host)
+        if len(calls) == 1:
+            return _Conn(302, [("Location", "/next")])
+        return _Conn(200, list(GOOD))
+
+    result = fetch_headers("https://app.example/start", timeout=1, connector=same_host)
+    assert result.status == 200
+    assert calls == ["app.example", "app.example"]
+
+
+def test_policy_failure_does_not_open_ports() -> None:
+    def ports(*args: object, **kwargs: object) -> tuple[object, ...]:
+        raise AssertionError(args)
+
+    with pytest.raises(TargetError, match="link-local"):
+        inspect("http://169.254.169.254/", authorized=True, timeout=1, ports=(80,), port_prober=ports)
+
+
+def test_connect_failure_still_checks_the_named_ports() -> None:
+    from authrecon.errors import ConnectError
+
+    seen: list[tuple[int, ...]] = []
+
+    def fetcher(url: str, timeout: float = 1) -> object:
+        del url, timeout
+        raise ConnectError("down")
+
+    def ports(host: str, port_list: tuple[int, ...], timeout: float) -> tuple[object, ...]:
+        del host, timeout
+        seen.append(port_list)
+        return ()
+
+    report = inspect(
+        "http://10.1.1.1/",
+        authorized=True,
+        timeout=1,
+        ports=(8080,),
+        fetcher=fetcher,
+        port_prober=ports,
+    )
+    assert seen == [(8080,)]
+    assert any(item.rule_id == "http-unreachable" for item in report.findings)
+
+
+def test_port_banner_is_one_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    from authrecon.ports import probe_ports
+
+    class Sock:
+        def settimeout(self, value: float) -> None:
+            del value
+
+        def recv(self, amount: int) -> bytes:
+            del amount
+            return b"hello\x00world\n"
+
+        def close(self) -> None:
+            return None
+
+    pauses: list[float] = []
+    monkeypatch.setattr(socket, "create_connection", lambda *args, **kwargs: Sock())
+    results = probe_ports("127.0.0.1", (22, 23), 1, sleeper=pauses.append)
+    assert pauses == [0.2]
+    assert results[0].open is True
+    assert results[0].banner == "hello world"
+    assert "\n" not in results[0].banner
+    assert "\x00" not in results[0].banner
+
+
+def test_cookie_and_clickjacking_edges() -> None:
+    findings, _observations = header_findings((("set-cookie", "sid=abc; SameSite=None"),), scheme="https")
+    matched = [item for item in findings if item.rule_id == "cookie-samesite"]
+    assert matched and matched[0].severity.value == "high"
+    assert all("abc" not in item.message for item in findings)
+
+    findings, _observations = header_findings(
+        (("content-security-policy", "default-src 'self'; frame-ancestors"),),
+        scheme="https",
+    )
+    assert any(item.rule_id == "clickjacking" for item in findings)
+
+    findings, _observations = header_findings(
+        (("strict-transport-security", "max-age=-1"), ("server", "nginx\nlow\tspoof")),
+        scheme="https",
+    )
+    hsts = next(item for item in findings if item.rule_id == "hsts-max-age")
+    assert "missing" in hsts.message
+    server = next(item for item in findings if item.rule_id == "server-disclosure")
+    assert "\n" not in server.message
+    assert "spoof" in server.message
+
+
+def test_timeout_is_checked_before_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+
+    def boom(*args: object, **kwargs: object) -> None:
+        calls.append(args)
+        raise AssertionError(args)
+
+    monkeypatch.setattr(socket, "getaddrinfo", boom)
+    assert main(["inspect", "https://example.com", "--i-am-authorized", "--timeout", "nan"]) == 2
+    assert calls == []

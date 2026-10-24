@@ -5,6 +5,10 @@ import json
 from stride_model.models import Model, Severity, Threat
 
 
+def _cell(value: str) -> str:
+    return " ".join(value.replace("|", "\\|").split())
+
+
 def render_markdown(model: Model, threats: tuple[Threat, ...]) -> str:
     lines = [f"# {model.name}", "", model.description, "", "## Trust zones", ""]
     for zone in model.zones:
@@ -28,8 +32,8 @@ def render_markdown(model: Model, threats: tuple[Threat, ...]) -> str:
         lines.append("| --- | --- | --- | --- | --- |")
         for threat in threats:
             lines.append(
-                f"| `{threat.id}` | {threat.severity.value} | {threat.category} "
-                f"| `{threat.element}` | {threat.detail} |"
+                f"| `{_cell(threat.id)}` | {threat.severity.value} | {threat.category} "
+                f"| `{_cell(threat.element)}` | {_cell(threat.detail)} |"
             )
         lines.extend(["", "## Mitigations", ""])
         for threat in threats:

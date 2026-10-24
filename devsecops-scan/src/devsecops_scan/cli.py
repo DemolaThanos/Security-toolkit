@@ -8,7 +8,7 @@ from pathlib import Path
 
 from devsecops_scan import __version__
 from devsecops_scan.config import resolve_settings
-from devsecops_scan.errors import ScanError
+from devsecops_scan.errors import ConfigError, ScanError
 from devsecops_scan.logsetup import configure_logging
 from devsecops_scan.publish import post_webhook, publish_s3
 from devsecops_scan.report import render
@@ -27,6 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     verbosity = int(args.verbose)
     try:
         configure_logging(verbosity)
+        if args.command == "publish":
+            _publish(args)
+            return 0
         if args.command != "scan":
             parser.print_help(sys.stderr)
             return 2
@@ -82,6 +85,27 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
 
+def _publish(args: argparse.Namespace) -> None:
+    path = Path(args.file)
+    try:
+        info = path.stat()
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
+    if not path.is_file() or info.st_size > 20_000_000:
+        raise ConfigError(f"report is missing or too large: {path}")
+    try:
+        body = path.read_bytes()
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
+    extension = "sarif" if path.suffix == ".sarif" else "json"
+    publish_s3(
+        body,
+        bucket=args.s3_bucket,
+        key=args.s3_key or _default_key(extension),
+        kms_key_id=args.s3_kms_key_id or None,
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="devsecops-scan",
@@ -89,6 +113,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"devsecops-scan {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
+    publish = sub.add_parser("publish", help="upload an existing report to S3")
+    publish.add_argument("file")
+    publish.add_argument("--s3-bucket", required=True)
+    publish.add_argument("--s3-key")
+    publish.add_argument("--s3-kms-key-id")
+    publish.add_argument("-v", "--verbose", action="count", default=0)
     scan = sub.add_parser("scan", help="scan a file or directory")
     scan.add_argument("path", nargs="?", default=".")
     scan.add_argument("--config", help="TOML config path")

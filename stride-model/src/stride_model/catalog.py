@@ -14,7 +14,7 @@ _MITIGATION = {
 
 
 def generate(model: Model) -> tuple[Threat, ...]:
-    threats: dict[tuple[str, str], Threat] = {}
+    threats: dict[tuple[str, str, str], Threat] = {}
     components = {item.id: item for item in model.components}
     for flow in model.flows:
         source = components[flow.source]
@@ -37,6 +37,7 @@ def generate(model: Model) -> tuple[Threat, ...]:
                     ),
                     mitigation=_MITIGATION["spoofing"],
                 ),
+                "flow",
             )
         if not protected:
             detail = f"Flow {flow.id} uses {flow.protocol}, which this review does not treat as protected" + (
@@ -52,6 +53,7 @@ def generate(model: Model) -> tuple[Threat, ...]:
                     detail=detail,
                     mitigation=_MITIGATION["tampering"],
                 ),
+                "flow",
             )
             _put(
                 threats,
@@ -63,6 +65,7 @@ def generate(model: Model) -> tuple[Threat, ...]:
                     detail=f"Flow {flow.id} can expose its payload on an unprotected hop.",
                     mitigation=_MITIGATION["disclosure"],
                 ),
+                "flow",
             )
         if dest.type == "process" and _internet_facing(model, flow):
             residual = dest.rate_limited is True
@@ -83,6 +86,7 @@ def generate(model: Model) -> tuple[Threat, ...]:
                     ),
                     mitigation=_MITIGATION["dos"],
                 ),
+                "component",
             )
     for component in model.components:
         if component.type == "process":
@@ -96,6 +100,7 @@ def generate(model: Model) -> tuple[Threat, ...]:
                         Severity.MEDIUM,
                         f"{component.id} declares logs_actions false.",
                     ),
+                    "component",
                 )
             elif component.logs_actions is None:
                 _put(
@@ -107,6 +112,7 @@ def generate(model: Model) -> tuple[Threat, ...]:
                         Severity.LOW,
                         f"{component.id} does not declare whether actions are logged.",
                     ),
+                    "component",
                 )
             inbound = [flow for flow in model.flows if flow.destination == component.id]
             outbound = [flow for flow in model.flows if flow.source == component.id]
@@ -121,9 +127,10 @@ def generate(model: Model) -> tuple[Threat, ...]:
                         Severity.HIGH,
                         f"{component.id} can be called without authentication and it writes to a data store.",
                     ),
+                    "component",
                 )
         if component.type == "data-store":
-            inbound_sensitive = any(
+            inbound_sensitive = is_sensitive(component.data_classes) or any(
                 is_sensitive(flow.data_classes) for flow in model.flows if flow.destination == component.id
             )
             if component.encrypted_at_rest is not True:
@@ -136,6 +143,7 @@ def generate(model: Model) -> tuple[Threat, ...]:
                         Severity.HIGH if inbound_sensitive else Severity.MEDIUM,
                         f"{component.id} does not declare encryption at rest.",
                     ),
+                    "component",
                 )
             if component.logs_actions is False:
                 _put(
@@ -147,6 +155,7 @@ def generate(model: Model) -> tuple[Threat, ...]:
                         Severity.MEDIUM,
                         f"{component.id} declares logs_actions false.",
                     ),
+                    "component",
                 )
             elif component.logs_actions is None:
                 _put(
@@ -158,6 +167,7 @@ def generate(model: Model) -> tuple[Threat, ...]:
                         Severity.LOW,
                         f"{component.id} does not declare whether access is logged.",
                     ),
+                    "component",
                 )
     ordered = sorted(threats.values(), key=lambda item: (-_rank(item.severity), item.id))
     return tuple(ordered)
@@ -174,8 +184,8 @@ def _control(identifier: str, category: str, element: str, severity: Severity, d
     return Threat(identifier, category, element, severity, detail, _MITIGATION[category])
 
 
-def _put(threats: dict[tuple[str, str], Threat], threat: Threat) -> None:
-    threats[(threat.element, threat.category)] = threat
+def _put(threats: dict[tuple[str, str, str], Threat], threat: Threat, scope: str) -> None:
+    threats[(scope, threat.element, threat.category)] = threat
 
 
 def _rank(severity: Severity) -> int:

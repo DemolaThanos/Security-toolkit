@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import socket
 import time
 from collections.abc import Callable, Iterable
 
-from authrecon.errors import TargetError
+from authrecon.errors import ConnectError, TargetError
 from authrecon.models import PortResult
-from authrecon.net import classify_host
+from authrecon.net import connect_pinned, resolve_host
 
 MAX_PORTS = 32
 _DELAY_SECONDS = 0.2
@@ -55,20 +54,20 @@ def probe_ports(
     *,
     sleeper: Callable[[float], None] | None = None,
 ) -> tuple[PortResult, ...]:
-    classify_host(host)
+    resolved = resolve_host(host)
     pause = sleeper or time.sleep
     results: list[PortResult] = []
     for index, port in enumerate(ports):
         if index:
             pause(_DELAY_SECONDS)
-        results.append(_one(host, port, timeout))
+        results.append(_one(resolved.addresses, port, timeout))
     return tuple(results)
 
 
-def _one(host: str, port: int, timeout: float) -> PortResult:
+def _one(addresses: tuple[str, ...], port: int, timeout: float) -> PortResult:
     try:
-        sock = socket.create_connection((host, port), timeout=timeout)
-    except (TimeoutError, OSError):
+        sock = connect_pinned(addresses, port, timeout)
+    except (TimeoutError, OSError, ConnectError):
         return PortResult(port=port, open=False, banner="")
     try:
         sock.settimeout(0.4)
@@ -84,4 +83,4 @@ def _one(host: str, port: int, timeout: float) -> PortResult:
 def _banner(data: bytes) -> str:
     text = data.decode("utf-8", errors="replace")
     cleaned = "".join(char if char.isprintable() else " " for char in text)
-    return cleaned.strip()[:120]
+    return " ".join(cleaned.split())[:120]

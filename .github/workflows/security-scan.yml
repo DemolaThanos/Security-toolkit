@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       path:
-        description: Path inside the caller repository to scan.
+        description: Path inside the caller checkout. Relative, and it cannot leave that checkout.
         type: string
         required: false
         default: .
@@ -48,10 +48,10 @@ on:
         required: false
         default: DemolaThanos/Security-toolkit
       toolkit-ref:
-        description: Commit or tag of this toolkit to install. Pin this.
+        description: 40-character commit SHA of this toolkit. Required. Use the same SHA as the workflow `uses` line.
         type: string
         required: false
-        default: main
+        default: ""
     secrets:
       aws-role-arn:
         required: false
@@ -64,8 +64,55 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+      actions: write
     steps:
+      - name: Check inputs
+        env:
+          TOOLKIT_REPOSITORY: ${{ inputs.toolkit-repository }}
+          TOOLKIT_REF: ${{ inputs.toolkit-ref }}
+          FAIL_ON: ${{ inputs.fail-on }}
+          PYTHON_VERSION: ${{ inputs.python-version }}
+          AWS_REGION: ${{ inputs.aws-region }}
+          S3_BUCKET: ${{ inputs.s3-bucket }}
+          SCAN_PATH: ${{ inputs.path }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          repo = os.environ["TOOLKIT_REPOSITORY"]
+          ref = os.environ["TOOLKIT_REF"]
+          fail = os.environ["FAIL_ON"]
+          python_version = os.environ["PYTHON_VERSION"]
+          region = os.environ["AWS_REGION"]
+          bucket = os.environ["S3_BUCKET"]
+          raw = os.environ["SCAN_PATH"]
+          if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+              sys.exit("toolkit-repository must be owner/name")
+          if not re.fullmatch(r"[0-9a-f]{40}", ref):
+              sys.exit("toolkit-ref must be a 40-character commit SHA")
+          if fail not in {"critical", "high", "medium", "low", "info"}:
+              sys.exit("fail-on is invalid")
+          if not re.fullmatch(r"[0-9]+\.[0-9]+", python_version):
+              sys.exit("python-version is invalid")
+          if not re.fullmatch(r"[a-z0-9-]+", region):
+              sys.exit("aws-region is invalid")
+          if bucket and (not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket) or ".." in bucket):
+              sys.exit("s3-bucket is invalid")
+          candidate = Path(raw)
+          if candidate.is_absolute() or raw.startswith(("/", "\\")):
+              sys.exit("path must stay inside the checkout")
+          root = Path("work").resolve()
+          target = (root / candidate).resolve()
+          try:
+              target.relative_to(root)
+          except ValueError:
+              sys.exit("path escapes the checkout")
+          PY
+
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -85,15 +132,8 @@ jobs:
         with:
           python-version: ${{ inputs.python-version }}
 
-      - name: Configure AWS credentials
-        if: ${{ inputs.s3-bucket != '' && secrets.aws-role-arn != '' }}
-        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
-        with:
-          role-to-assume: ${{ secrets.aws-role-arn }}
-          aws-region: ${{ inputs.aws-region }}
-
       - name: Install scanner
-        run: python -m pip install "./toolkit/devsecops-scan[s3]"
+        run: python -m pip install ./toolkit/devsecops-scan
 
       - name: Scan
         env:
@@ -101,16 +141,9 @@ jobs:
           FAIL_ON: ${{ inputs.fail-on }}
           DAST_URL: ${{ inputs.dast-url }}
           DAST_AUTHORIZED: ${{ inputs.dast-authorized }}
-          S3_BUCKET: ${{ inputs.s3-bucket }}
-          S3_KEY: ${{ inputs.s3-key }}
-          S3_KMS_KEY_ID: ${{ inputs.s3-kms-key-id }}
         run: |
           set -euo pipefail
-          if [[ "$SCAN_PATH" = /* ]]; then
-            target="$SCAN_PATH"
-          else
-            target="work/${SCAN_PATH#./}"
-          fi
+          target="$(python -c 'import os; from pathlib import Path; root = Path("work").resolve(); raw = os.environ["SCAN_PATH"]; candidate = Path(raw); target = (root / candidate).resolve(); target.relative_to(root); print(target)')"
           cmd=(devsecops-scan scan "$target" --fail-on "$FAIL_ON" --format sarif --output work/devsecops-scan.sarif)
           if [[ -n "$DAST_URL" ]]; then
             if [[ "$DAST_AUTHORIZED" != "true" ]]; then
@@ -118,15 +151,6 @@ jobs:
               exit 2
             fi
             cmd+=(--dast-url "$DAST_URL" --i-am-authorized)
-          fi
-          if [[ -n "$S3_BUCKET" ]]; then
-            cmd+=(--s3-bucket "$S3_BUCKET")
-          fi
-          if [[ -n "$S3_KEY" ]]; then
-            cmd+=(--s3-key "$S3_KEY")
-          fi
-          if [[ -n "$S3_KMS_KEY_ID" ]]; then
-            cmd+=(--s3-kms-key-id "$S3_KMS_KEY_ID")
           fi
           "${cmd[@]}"
 
@@ -137,3 +161,87 @@ jobs:
           name: devsecops-scan-sarif
           path: work/devsecops-scan.sarif
           if-no-files-found: ignore
+
+  publish:
+    needs: scan
+    if: ${{ !cancelled() && inputs.s3-bucket != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Check publish inputs
+        env:
+          TOOLKIT_REPOSITORY: ${{ inputs.toolkit-repository }}
+          TOOLKIT_REF: ${{ inputs.toolkit-ref }}
+          S3_BUCKET: ${{ inputs.s3-bucket }}
+          PYTHON_VERSION: ${{ inputs.python-version }}
+          AWS_REGION: ${{ inputs.aws-region }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import re
+          import sys
+          repo = os.environ["TOOLKIT_REPOSITORY"]
+          ref = os.environ["TOOLKIT_REF"]
+          bucket = os.environ["S3_BUCKET"]
+          python_version = os.environ["PYTHON_VERSION"]
+          region = os.environ["AWS_REGION"]
+          if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+              sys.exit("toolkit-repository must be owner/name")
+          if not re.fullmatch(r"[0-9a-f]{40}", ref):
+              sys.exit("toolkit-ref must be a 40-character commit SHA")
+          if not re.fullmatch(r"[0-9]+\.[0-9]+", python_version):
+              sys.exit("python-version is invalid")
+          if not re.fullmatch(r"[a-z0-9-]+", region):
+              sys.exit("aws-region is invalid")
+          if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket) or ".." in bucket:
+              sys.exit("s3-bucket is invalid")
+          PY
+
+      - name: Download SARIF
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          name: devsecops-scan-sarif
+          path: report
+
+      - name: Checkout scanner
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.toolkit-repository }}
+          ref: ${{ inputs.toolkit-ref }}
+          path: toolkit
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Configure AWS credentials
+        if: ${{ secrets.aws-role-arn != '' }}
+        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+        with:
+          role-to-assume: ${{ secrets.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Install scanner
+        run: python -m pip install "./toolkit/devsecops-scan[s3]"
+
+      - name: Publish
+        env:
+          S3_BUCKET: ${{ inputs.s3-bucket }}
+          S3_KEY: ${{ inputs.s3-key }}
+          S3_KMS_KEY_ID: ${{ inputs.s3-kms-key-id }}
+        run: |
+          set -euo pipefail
+          cmd=(devsecops-scan publish report/devsecops-scan.sarif --s3-bucket "$S3_BUCKET")
+          if [[ -n "$S3_KEY" ]]; then
+            cmd+=(--s3-key "$S3_KEY")
+          fi
+          if [[ -n "$S3_KMS_KEY_ID" ]]; then
+            cmd+=(--s3-kms-key-id "$S3_KMS_KEY_ID")
+          fi
+          "${cmd[@]}"

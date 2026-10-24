@@ -37,7 +37,7 @@ metadata:
 
 | Rule | Severity | What it catches |
 | --- | --- | --- |
-| `host-path-sensitive` | critical | hostPath of `/`, `/proc`, `/sys`, `/etc`, `/var/run`, or a container runtime socket |
+| `host-path-sensitive` | critical | hostPath of `/`, or a path under `/etc`, `/proc`, `/root`, `/run`, `/sys`, `/var/lib/containerd`, `/var/lib/docker`, `/var/lib/kubelet`, or `/var/run`. `/etc-backup` is not this rule |
 | `rbac-wildcard` | critical when verb and resource are both `*` | wildcard Role or ClusterRole rules |
 | `rbac-cluster-admin` | critical | binding to `cluster-admin` |
 | `rbac-anonymous` | critical | subject `system:anonymous`, `system:unauthenticated`, or `*` |
@@ -46,12 +46,14 @@ metadata:
 | `plaintext-env-secret` | high | literal `value` on a password, token, or key env var. `valueFrom` is not flagged |
 | `rbac-secret-read`, `rbac-escalate` | high | reading Secrets, or `bind` / `escalate` / `impersonate` |
 | `run-as-non-root`, `allow-privilege-escalation`, `seccomp-unconfined` | medium | identity and seccomp gaps |
-| `image-unpinned`, `resources-missing`, `host-port`, `share-process-namespace` | medium | tag `latest`, no digest, missing limits |
+| `image-unpinned`, `resources-missing`, `host-port`, `share-process-namespace` | medium | missing tag, empty tag, `latest`, or a short digest (a non-latest tag or a full `sha256` digest is pinned); missing limits; hostPort; shared process namespace |
 | `secret-manifest` | medium | a `Secret` object in the repo. `SealedSecret` is ignored |
 | `netpol-missing` | medium | a namespace has workloads and no NetworkPolicy in the scan set |
 | `namespace-default`, `automount-token`, `seccomp-missing`, `drop-all-missing`, `read-only-root-missing` | low | defaults that are easy to tighten |
 
 A NetworkPolicy is counted if it is present. The checker does not judge whether the policy is a default deny.
+
+Pod `securityContext` contributes only `runAsUser`, `runAsNonRoot`, `runAsGroup`, and `seccompProfile`. `privileged`, `allowPrivilegeEscalation`, capabilities, and the root filesystem are read from the container. `exclude` matches a path prefix or a glob, not a substring. Symlinks that leave the directory you passed are skipped.
 
 ## License
 

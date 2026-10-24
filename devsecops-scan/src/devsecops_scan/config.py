@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import tomllib
 from collections.abc import Mapping
@@ -8,6 +9,8 @@ from pathlib import Path
 
 from devsecops_scan.errors import ConfigError
 from devsecops_scan.models import Severity, parse_severity
+
+_MAX_BYTES = 20_000_000
 
 _KEYS = frozenset(
     {
@@ -83,7 +86,10 @@ def resolve_settings(
     if config_file is not None:
         data = _load_toml(config_file)
         config_dir = config_file.parent
-    fail = parse_severity(_pick_str(fail_on, data.get("fail_on"), "high", "fail_on"))
+    try:
+        fail = parse_severity(_pick_str(fail_on, data.get("fail_on"), "high", "fail_on"))
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     report_fmt = _pick_str(report_format, data.get("format"), "text", "format")
     if report_fmt not in {"text", "json", "sarif"}:
         raise ConfigError("format must be text, json, or sarif")
@@ -91,7 +97,11 @@ def resolve_settings(
         root=root,
         fail_on=fail,
         exclude=_excludes(data.get("exclude"), exclude),
-        max_bytes=_positive_int(_first(max_bytes, data.get("max_bytes"), 1_000_000), "max_bytes"),
+        max_bytes=_positive_int(
+            _first(max_bytes, data.get("max_bytes"), 1_000_000),
+            "max_bytes",
+            upper=_MAX_BYTES,
+        ),
         secrets=_flag(data.get("secrets"), True) and not no_secrets,
         sast=_flag(data.get("sast"), True) and not no_sast,
         sca=_flag(data.get("sca"), True) and not no_sca,
@@ -116,7 +126,7 @@ def resolve_settings(
         webhook_token=_blank_to_none(environment.get("DEVSECOPS_SCAN_WEBHOOK_TOKEN")),
         report_format=report_fmt,
         output=Path(output) if output else None,
-        timeout=timeout,
+        timeout=_timeout(timeout),
     )
 
 
@@ -205,10 +215,20 @@ def _first(cli: int | None, configured: object, default: int) -> object:
     return default
 
 
-def _positive_int(value: object, name: str) -> int:
+def _positive_int(value: object, name: str, *, upper: int | None = None) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ConfigError(f"{name} must be a positive integer")
+    if upper is not None and value > upper:
+        raise ConfigError(f"{name} must be <= {upper}")
     return value
+
+
+def _timeout(value: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ConfigError("timeout must be between 0.1 and 30 seconds")
+    if value < 0.1 or value > 30:
+        raise ConfigError("timeout must be between 0.1 and 30 seconds")
+    return float(value)
 
 
 def _blank_to_none(value: str | None) -> str | None:

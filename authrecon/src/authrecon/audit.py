@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 from typing import Protocol
 from urllib.parse import urlsplit
 
 from authrecon.checks import header_findings, tls_findings
-from authrecon.errors import TargetError
+from authrecon.errors import ConnectError, PolicyError, TargetError
 from authrecon.http_client import Connector, fetch_headers
 from authrecon.models import Finding, PortResult, Report, Severity, TlsInfo
 from authrecon.ports import probe_ports
@@ -31,10 +32,14 @@ def inspect(
     connector: Connector | None = None,
 ) -> Report:
     if not authorized:
-        raise TargetError(
+        raise PolicyError(
             "refusing to run without --i-am-authorized. "
             "authrecon is for hosts you own or have written permission to test."
         )
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout):
+        raise TargetError("timeout must be between 0.1 and 30 seconds")
+    if timeout < 0.1 or timeout > 30:
+        raise TargetError("timeout must be between 0.1 and 30 seconds")
     parts = urlsplit(url)
     if parts.scheme not in {"http", "https"} or not parts.hostname:
         raise TargetError("URL must be http or https and include a host")
@@ -43,16 +48,24 @@ def inspect(
     tls_info: TlsInfo | None = None
     if parts.scheme == "https":
         tls_info = (tls_prober or probe_tls)(host, port, timeout)
+    http_error: str | None = None
+    fetched: HeaderResponse | None
     try:
         if fetcher is not None:
             fetched = fetcher(url, timeout=timeout)
         else:
             fetched = fetch_headers(url, timeout=timeout, connector=connector)
-    except TargetError as exc:
-        findings = [Finding("http-unreachable", Severity.HIGH, str(exc))]
+    except ConnectError as exc:
+        http_error = str(exc)
+        fetched = None
+    port_results: tuple[PortResult, ...] = ()
+    if ports:
+        port_results = (port_prober or probe_ports)(host, ports, timeout)
+    if http_error is not None or fetched is None:
+        findings = [Finding("http-unreachable", Severity.HIGH, http_error or "HTTP request failed")]
         if tls_info is not None:
             findings.extend(tls_findings(tls_info))
-        return Report(url, None, None, tuple(findings), (), tls_info, ())
+        return Report(url, None, None, tuple(findings), (), tls_info, port_results)
     final = str(fetched.final_url)
     status = fetched.status
     headers = fetched.headers
@@ -62,9 +75,6 @@ def inspect(
     findings, observations = header_findings(headers, scheme=scheme)
     if tls_info is not None:
         findings.extend(tls_findings(tls_info))
-    port_results: tuple[PortResult, ...] = ()
-    if ports:
-        port_results = (port_prober or probe_ports)(host, ports, timeout)
     return Report(
         url=url,
         final_url=final,

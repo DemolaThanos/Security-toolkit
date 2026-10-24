@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -95,6 +96,9 @@ def iter_files(root: Path, *, exclude: tuple[str, ...]) -> Iterator[Path]:
             if _excluded(relative, exclude):
                 logger.debug("excluded %s", relative)
                 continue
+            if not _contained_file(root, path):
+                logger.warning("skip %s", relative)
+                continue
             yield path
 
 
@@ -116,6 +120,23 @@ def _excluded(relative: str, patterns: tuple[str, ...]) -> bool:
     return False
 
 
+def _contained_file(root: Path, path: Path) -> bool:
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    if stat.S_ISLNK(info.st_mode):
+        try:
+            path.resolve().relative_to(root.resolve())
+        except (OSError, ValueError):
+            return False
+    try:
+        info = path.stat()
+    except OSError:
+        return False
+    return stat.S_ISREG(info.st_mode)
+
+
 def read_text(path: Path, *, max_bytes: int) -> str | None:
     try:
         size = path.stat().st_size
@@ -135,4 +156,7 @@ def read_text(path: Path, *, max_bytes: int) -> str | None:
     if b"\0" in data:
         logger.debug("skip binary %s", path)
         return None
-    return data.decode("utf-8", errors="replace")
+    text = data.decode("utf-8", errors="replace")
+    if text.startswith("\ufeff"):
+        text = text[1:]
+    return text

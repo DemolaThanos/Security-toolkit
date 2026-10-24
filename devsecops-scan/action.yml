@@ -2,7 +2,7 @@ name: DevSecOps scan
 description: Secret, SAST, and dependency advisory scan with optional passive DAST.
 inputs:
   path:
-    description: Directory or file to scan, relative to the workspace.
+    description: Directory or file to scan, inside the workspace.
     required: false
     default: "."
   fail-on:
@@ -59,7 +59,22 @@ runs:
       run: |
         set -euo pipefail
         report="${RUNNER_TEMP:-/tmp}/devsecops-scan.sarif"
-        cmd=(devsecops-scan scan "$SCAN_PATH" --fail-on "$FAIL_ON" --format sarif --output "$report")
+        python - <<'PY' > "${RUNNER_TEMP:-/tmp}/scan-target"
+        import os
+        import sys
+        from pathlib import Path
+        root = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+        raw = os.environ.get("SCAN_PATH") or "."
+        candidate = Path(raw)
+        target = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError:
+            sys.exit("path escapes the workspace")
+        print(target)
+        PY
+        target="$(cat "${RUNNER_TEMP:-/tmp}/scan-target")"
+        cmd=(devsecops-scan scan "$target" --fail-on "$FAIL_ON" --format sarif --output "$report")
         if [[ -n "$ADVISORIES" ]]; then
           cmd+=(--advisories "$ADVISORIES")
         fi
@@ -79,5 +94,11 @@ runs:
         if [[ -n "$S3_KMS_KEY_ID" ]]; then
           cmd+=(--s3-kms-key-id "$S3_KMS_KEY_ID")
         fi
+        set +e
         "${cmd[@]}"
-        echo "report=${report}" >> "$GITHUB_OUTPUT"
+        status=$?
+        set -e
+        if [[ -f "$report" ]]; then
+          echo "report=${report}" >> "$GITHUB_OUTPUT"
+        fi
+        exit "$status"

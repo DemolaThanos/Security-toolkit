@@ -25,7 +25,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.command != "render":
             parser.print_help(sys.stderr)
             return 2
-        text = Path(args.path).read_text(encoding="utf-8")
+        path = Path(args.path)
+        try:
+            if path.stat().st_size > 1_000_000:
+                raise ModelError(["model is larger than 1000000 bytes"])
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ModelError([f"cannot read {path}: {exc}"]) from exc
         model = parse_model(text)
         threats = generate(model)
         body = render_json(model, threats) if args.format == "json" else render_markdown(model, threats)
@@ -40,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         for problem in exc.problems:
             print(f"stride-model: {problem}", file=sys.stderr)
         return 2
-    except (OSError, ValueError) as exc:
+    except (OSError, UnicodeError, ValueError) as exc:
         print(f"stride-model: {exc}", file=sys.stderr)
         return 2
     except BrokenPipeError:

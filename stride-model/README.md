@@ -19,7 +19,7 @@ stride-model render examples/checkout.yaml
 stride-model render model.yaml --format json --fail-on high
 ```
 
-Exit codes: `0` the model rendered (and, with `--fail-on`, nothing reached the threshold), `1` a threat is at or above `--fail-on`, `2` the model is invalid. Without `--fail-on` the command is a generator and exits `0`.
+Exit codes: `0` the model rendered (and, with `--fail-on`, nothing reached the threshold), `1` a threat is at or above `--fail-on`, `2` the model is invalid. Without `--fail-on` the command is a generator and exits `0`. A model larger than 1 MB is rejected.
 
 ## Model
 
@@ -45,7 +45,7 @@ flows:
   - id: submit
     source: browser
     destination: api
-    protocol: https        # https, tls, mtls, ssh, and wss are treated as protected
+    protocol: https        # https, tls, mtls, ssh, sftp, and wss are treated as protected
     authenticated: true    # required, so the model cannot leave it implicit
     data_classes: [credential, payment]
 ```

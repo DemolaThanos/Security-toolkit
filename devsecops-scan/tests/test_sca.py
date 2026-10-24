@@ -1,7 +1,11 @@
 import json
 from pathlib import Path
 
+from devsecops_scan.models import Severity
 from devsecops_scan.sca import (
+    Advisory,
+    Dependency,
+    RangeEvent,
     load_advisories,
     parse_go_mod,
     parse_package_json,
@@ -59,3 +63,73 @@ exclude golang.org/x/crypto v0.1.0
         ("golang.org/x/net", "0.24.0", 7),
         ("golang.org/x/text", "0.14.0", 10),
     ]
+
+
+def test_go_replace_selects_the_module_that_is_built() -> None:
+    text = """
+module example.com/app
+
+go 1.22
+
+require golang.org/x/net v0.24.0
+
+replace golang.org/x/net => example.com/net v0.1.0
+"""
+    deps = parse_go_mod(text, "go.mod")
+    assert [(item.name, item.version) for item in deps] == [("example.com/net", "0.1.0")]
+
+
+def test_scoped_lock_package_without_name() -> None:
+    text = json.dumps({"packages": {"node_modules/@scope/left-pad": {"version": "1.2.3"}}})
+    deps = parse_package_lock(text, "package-lock.json")
+    assert [(item.name, item.version) for item in deps] == [("@scope/left-pad", "1.2.3")]
+
+
+def test_reintroduced_and_last_affected_ranges() -> None:
+    advisory = Advisory(
+        id="TEST-1",
+        summary="gap",
+        severity=Severity.HIGH,
+        ecosystem="PyPI",
+        package="demo",
+        ranges=(
+            (
+                RangeEvent("introduced", "0"),
+                RangeEvent("fixed", "1.0.0"),
+                RangeEvent("introduced", "2.0.0"),
+                RangeEvent("fixed", "2.1.0"),
+            ),
+            (RangeEvent("introduced", "1.0.0"), RangeEvent("last_affected", "1.2.0")),
+        ),
+        versions=(),
+    )
+
+    def flagged(version: str) -> bool:
+        dep = Dependency("PyPI", "demo", version, "requirements.txt", 1)
+        return any(item.rule_id == "TEST-1" for item in scan_dependencies([dep], (advisory,), require_pins=False))
+
+    assert flagged("0.9.0")
+    assert not flagged("1.5.0")
+    assert flagged("1.2.0")
+    assert not flagged("1.2.1")
+    assert flagged("2.0.5")
+    assert not flagged("2.1.0")
+
+
+def test_limit_event_is_exclusive() -> None:
+    advisory = Advisory(
+        id="TEST-2",
+        summary="limit",
+        severity=Severity.HIGH,
+        ecosystem="PyPI",
+        package="demo",
+        ranges=((RangeEvent("introduced", "0"), RangeEvent("limit", "2.0.0")),),
+        versions=(),
+    )
+
+    def flagged(version: str) -> bool:
+        dep = Dependency("PyPI", "demo", version, "requirements.txt", 1)
+        return any(item.rule_id == "TEST-2" for item in scan_dependencies([dep], (advisory,), require_pins=False))
+
+    assert flagged("1.9.0")
+    assert not flagged("2.0.0")

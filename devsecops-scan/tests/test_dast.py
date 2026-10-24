@@ -84,3 +84,49 @@ def test_redirect_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_classify_literals() -> None:
     assert classify_host("10.0.0.8") is HostClass.PRIVATE
     assert classify_host("8.8.8.8") is HostClass.PUBLIC
+    assert classify_host("::ffff:8.8.8.8") is HostClass.PUBLIC
+    with pytest.raises(TargetError, match="link-local"):
+        classify_host("::ffff:169.254.169.254")
+    with pytest.raises(TargetError, match="non-canonical"):
+        classify_host("0xa9fea9fe")
+
+
+def test_tls_failure_does_not_disable_verification() -> None:
+    import ssl
+
+    calls: list[bool] = []
+
+    def connector(scheme: str, host: str, port: int, timeout: float, verify: bool) -> _Conn:
+        del scheme, host, port, timeout
+        calls.append(verify)
+        raise ssl.SSLError("bad certificate")
+
+    with pytest.raises(TargetError, match="TLS"):
+        fetch_headers("https://1.1.1.1/", timeout=1, connector=connector)
+    assert calls == [True]
+
+
+def test_connection_stays_on_the_checked_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    lookups: list[str] = []
+
+    def fake_dns(host: str, *args: object, **kwargs: object) -> list[tuple[object, ...]]:
+        del args, kwargs
+        lookups.append(host)
+        ip = "93.184.216.34" if len(lookups) == 1 else "169.254.169.254"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 0))]
+
+    seen: list[tuple[object, ...]] = []
+
+    def fake_connect(address: tuple[object, ...], timeout: float = 0, source_address: object = None) -> object:
+        del timeout, source_address
+        seen.append(address)
+        raise TimeoutError()
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_dns)
+    monkeypatch.setattr(socket, "create_connection", fake_connect)
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    with pytest.raises(TargetError, match="connection"):
+        fetch_headers("http://app.example/health", timeout=1)
+    assert lookups == ["app.example"]
+    assert seen == [("93.184.216.34", 80)]

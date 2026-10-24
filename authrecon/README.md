@@ -4,7 +4,7 @@ Authorised reconnaissance for one web host. It records response headers, the TLS
 
 Use it only on systems you own or have written permission to test. Unauthorised scanning is illegal in a lot of places. The command refuses to run without `--i-am-authorized` or `AUTHRECON_AUTHORIZED=1`. That flag is an acknowledgement, not a permission slip.
 
-authrecon does not send exploit payloads, does not try credentials, and does not scan a port range wider than 32 ports. It refuses link-local addresses, including cloud metadata, and it will not follow a redirect from a public host into a private network.
+authrecon does not send exploit payloads, does not try credentials, and does not scan a port range wider than 32 ports. It opens the one host you named. A redirect to a different host is refused, including a public host, and so is a redirect into a private or link-local address. The connection is pinned to the addresses from that check. Non-canonical IP spellings are rejected. `--i-am-authorized` does not turn those checks off.
 
 ## Install
 

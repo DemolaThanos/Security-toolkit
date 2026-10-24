@@ -1,12 +1,13 @@
 import importlib
 import json
+import socket
 from pathlib import Path
 
 import pytest
 
 from devsecops_scan.cli import main
-from devsecops_scan.config import resolve_settings
-from devsecops_scan.errors import ConfigError, PublishError
+from devsecops_scan.config import Settings, resolve_settings
+from devsecops_scan.errors import ConfigError, PublishError, ScanError
 from devsecops_scan.publish import post_webhook, publish_s3, refuse_redirect
 from devsecops_scan.report import render
 from devsecops_scan.scan import run_scan
@@ -145,8 +146,14 @@ def test_missing_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
         publish_s3(b"{}", bucket="audit", key="a.json", kms_key_id=None)
 
 
-def test_webhook_scrubs_token() -> None:
+def test_webhook_scrubs_token(monkeypatch: pytest.MonkeyPatch) -> None:
     token = "super-secret-token"
+
+    def fake_dns(host: str, *args: object, **kwargs: object) -> list[tuple[object, ...]]:
+        del host, args, kwargs
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_dns)
 
     def opener(request: object, timeout: float) -> object:
         del timeout
@@ -162,7 +169,130 @@ def test_webhook_scrubs_token() -> None:
         refuse_redirect(302)
 
 
+def test_webhook_rejects_cleartext_and_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError(args)
+
+    monkeypatch.setattr(socket, "getaddrinfo", boom)
+    with pytest.raises(PublishError, match="https"):
+        post_webhook(b"{}", "http://tracker.example/hook", None, 1)
+    with pytest.raises(PublishError, match="link-local"):
+        post_webhook(b"{}", "https://169.254.169.254/latest", None, 1)
+
+
+def test_s3_rejects_bad_names_and_hides_client_text() -> None:
+    with pytest.raises(PublishError, match="bucket"):
+        publish_s3(b"{}", bucket="Not_A_Bucket", key="a.json", kms_key_id=None, client=object())
+    with pytest.raises(PublishError, match="key"):
+        publish_s3(b"{}", bucket="audit", key="a/../b.json", kms_key_id=None, client=object())
+
+    class Client:
+        def put_object(self, **kwargs: object) -> None:
+            del kwargs
+            raise RuntimeError("secret-bucket-detail")
+
+    with pytest.raises(PublishError, match="RuntimeError") as caught:
+        publish_s3(b"{}", bucket="audit", key="a.json", kms_key_id=None, client=Client())
+    assert "secret-bucket-detail" not in str(caught.value)
+
+
 def test_cli_exit_code(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text("eval(user_input)\n", encoding="utf-8")
     assert main(["scan", str(tmp_path), "--no-sca", "--fail-on", "high"]) == 1
     assert main(["scan", str(tmp_path), "--no-sca", "--no-sast", "--no-secrets"]) == 0
+
+
+def _settings(root: Path) -> Settings:
+    return resolve_settings(
+        root=root,
+        config_path=None,
+        fail_on="high",
+        exclude=(),
+        max_bytes=None,
+        no_secrets=False,
+        no_sast=False,
+        no_sca=False,
+        require_pins=None,
+        advisories=None,
+        dast_url=None,
+        dast_authorized=False,
+        s3_bucket=None,
+        s3_key=None,
+        s3_kms_key_id=None,
+        webhook_url=None,
+        report_format="text",
+        output=None,
+        timeout=1,
+        env={},
+    )
+
+
+def test_symlink_outside_the_root_is_not_read(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.py"
+    outside.write_text("eval(user_input)\n", encoding="utf-8")
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "link.py").symlink_to(outside)
+    (root / "local.py").write_text("value = 1\n", encoding="utf-8")
+    report = run_scan(_settings(root))
+    assert all(item.rule_id != "python-eval" for item in report.findings)
+
+
+def test_requirement_include_is_confined(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    (root / "requirements.txt").write_text("-r nested/extra.txt\nrequests==2.31.0\n", encoding="utf-8")
+    (nested / "extra.txt").write_text("-r ../requirements.txt\n", encoding="utf-8")
+    report = run_scan(_settings(root))
+    assert any(item.rule_id == "GHSA-9wx4-h78v-vm56" for item in report.findings)
+
+    (root / "requirements.txt").write_text("-r ../outside.txt\n", encoding="utf-8")
+    (tmp_path / "outside.txt").write_text("requests==2.31.0\n", encoding="utf-8")
+    with pytest.raises(ScanError, match="escapes"):
+        run_scan(_settings(root))
+
+
+def test_file_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from devsecops_scan import scan as scan_mod
+
+    assert scan_mod._MAX_FILES == 50_000
+    monkeypatch.setattr(scan_mod, "_MAX_FILES", 1)
+    (tmp_path / "a.py").write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("value = 2\n", encoding="utf-8")
+    with pytest.raises(ScanError, match="more than"):
+        run_scan(_settings(tmp_path))
+
+
+def test_publish_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    report = tmp_path / "report.sarif"
+    report.write_bytes(b"{}")
+    seen: dict[str, object] = {}
+
+    def fake(
+        body: bytes,
+        *,
+        bucket: str,
+        key: str,
+        kms_key_id: str | None,
+        content_type: str = "",
+        client: object = None,
+    ) -> None:
+        del content_type, client
+        seen["body"] = body
+        seen["bucket"] = bucket
+        seen["key"] = key
+        seen["kms"] = kms_key_id
+
+    monkeypatch.setattr("devsecops_scan.cli.publish_s3", fake)
+    assert main(["publish", str(report), "--s3-bucket", "audit", "--s3-key", "reports/a.sarif"]) == 0
+    assert seen == {"body": b"{}", "bucket": "audit", "key": "reports/a.sarif", "kms": None}
+    assert main(["publish", str(tmp_path / "missing.sarif"), "--s3-bucket", "audit"]) == 2
+
+
+def test_dast_metadata_and_timeout_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["scan", str(tmp_path), "--no-sca", "--no-sast", "--no-secrets", "--timeout", "0"]) == 2
+    assert main(["scan", str(tmp_path), "--no-sca", "--dast-url", "http://169.254.169.254/"]) == 2
+    assert "authorized" in capsys.readouterr().err
+    assert main(["scan", str(tmp_path), "--no-sca", "--dast-url", "http://169.254.169.254/", "--i-am-authorized"]) == 2
+    assert "link-local" in capsys.readouterr().err

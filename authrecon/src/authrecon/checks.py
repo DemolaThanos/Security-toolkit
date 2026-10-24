@@ -64,10 +64,10 @@ def header_findings(
     _cookies(grouped, scheme, findings)
     server = _one(grouped, "server")
     if server:
-        findings.append(Finding("server-disclosure", Severity.INFO, f"Server header discloses {server[:80]}"))
+        findings.append(Finding("server-disclosure", Severity.INFO, f"Server header discloses {_snippet(server)}"))
     powered = _one(grouped, "x-powered-by")
     if powered:
-        findings.append(Finding("x-powered-by", Severity.INFO, f"X-Powered-By discloses {powered[:80]}"))
+        findings.append(Finding("x-powered-by", Severity.INFO, f"X-Powered-By discloses {_snippet(powered)}"))
     return findings, _observations(grouped)
 
 
@@ -136,21 +136,33 @@ def _referrer(grouped: dict[str, list[str]], findings: list[Finding]) -> None:
     elif policy == "no-referrer-when-downgrade":
         findings.append(Finding("referrer-policy", Severity.LOW, "Referrer-Policy is the legacy downgrade value"))
     elif policy not in _SECURE_REFERRER:
-        findings.append(Finding("referrer-policy", Severity.MEDIUM, f"Referrer-Policy {policy} is not a strict policy"))
+        findings.append(
+            Finding(
+                "referrer-policy",
+                Severity.MEDIUM,
+                f"Referrer-Policy {_snippet(policy, 40)} is not a strict policy",
+            )
+        )
 
 
 def _cookies(grouped: dict[str, list[str]], scheme: str, findings: list[Finding]) -> None:
     for raw in grouped.get("set-cookie", []):
         name, flags, attrs = _cookie(raw)
+        name = _snippet(name, 80) or "<cookie>"
         if scheme == "https" and "secure" not in flags:
             findings.append(Finding("cookie-secure", Severity.HIGH, f"cookie {name} is missing Secure"))
         if "httponly" not in flags:
             findings.append(Finding("cookie-httponly", Severity.MEDIUM, f"cookie {name} is missing HttpOnly"))
         samesite = attrs.get("samesite", "").lower()
-        if "samesite" not in flags:
+        if samesite == "none" and "secure" not in flags:
+            findings.append(
+                Finding("cookie-samesite", Severity.HIGH, f"cookie {name} sets SameSite=None without Secure")
+            )
+        elif "samesite" not in flags:
             findings.append(Finding("cookie-samesite", Severity.MEDIUM, f"cookie {name} is missing SameSite"))
         elif samesite not in {"strict", "lax", "none"}:
-            findings.append(Finding("cookie-samesite", Severity.MEDIUM, f"cookie {name} has SameSite {samesite}"))
+            shown = _snippet(samesite, 40)
+            findings.append(Finding("cookie-samesite", Severity.MEDIUM, f"cookie {name} has SameSite {shown}"))
 
 
 def _observations(grouped: dict[str, list[str]]) -> list[str]:
@@ -181,7 +193,7 @@ def _clickjacking_ok(grouped: dict[str, list[str]], csp: str | None) -> bool:
         return False
     directives = _csp(csp)
     ancestors = directives.get("frame-ancestors")
-    if ancestors is None:
+    if not ancestors or not ancestors.split():
         return False
     return "*" not in ancestors.split()
 
@@ -196,9 +208,11 @@ def _parse_hsts(value: str) -> tuple[int | None, set[str]]:
         if item.lower().startswith("max-age"):
             _, _, raw = item.partition("=")
             try:
-                max_age = int(raw.strip().strip('"'))
+                parsed = int(raw.strip().strip('"'))
             except ValueError:
                 max_age = None
+            else:
+                max_age = None if parsed < 0 else parsed
         else:
             directives.add(item.lower())
     return max_age, directives
@@ -242,6 +256,11 @@ def _one(grouped: dict[str, list[str]], name: str) -> str | None:
     if not values:
         return None
     return values[0]
+
+
+def _snippet(value: str, limit: int = 80) -> str:
+    cleaned = "".join(char if char.isprintable() else " " for char in value)
+    return " ".join(cleaned.split())[:limit]
 
 
 def _broken_cipher(name: str) -> bool:

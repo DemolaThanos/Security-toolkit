@@ -32,10 +32,16 @@ def main(argv: list[str] | None = None) -> int:
             parser.print_help(sys.stderr)
             return 2
         print(_DISCLAIMER, file=sys.stderr)
+        authorized = bool(args.i_am_authorized) or _env_flag("AUTHRECON_AUTHORIZED")
+        if not authorized:
+            raise ReconError(
+                "refusing to run without --i-am-authorized. "
+                "authrecon is for hosts you own or have written permission to test."
+            )
         ports = parse_ports(args.ports) if args.ports else ()
         report = inspect(
             args.url,
-            authorized=bool(args.i_am_authorized) or _env_flag("AUTHRECON_AUTHORIZED"),
+            authorized=True,
             timeout=float(args.timeout),
             ports=ports,
         )

@@ -1,32 +1,32 @@
 from __future__ import annotations
 
 import contextlib
-import socket
 import ssl
 from datetime import UTC, datetime
 
+from authrecon.errors import ConnectError
 from authrecon.models import TlsInfo
-from authrecon.net import classify_host
+from authrecon.net import ResolvedHost, connect_pinned, resolve_host
 
 _LEGACY = (("TLSv1", ssl.TLSVersion.TLSv1), ("TLSv1.1", ssl.TLSVersion.TLSv1_1))
 
 
 def probe_tls(host: str, port: int, timeout: float) -> TlsInfo:
-    classify_host(host)
+    resolved = resolve_host(host)
     legacy_timeout = min(timeout, 5.0)
     try:
-        sock = _handshake(host, port, timeout, minimum=ssl.TLSVersion.TLSv1_2, verify=True)
+        sock = _handshake(resolved, port, timeout, minimum=ssl.TLSVersion.TLSv1_2, verify=True)
         verified = True
         verify_error = None
     except ssl.SSLCertVerificationError as exc:
         verified = False
-        verify_error = getattr(exc, "verify_message", None) or exc.strerror or "certificate verification failed"
+        verify_error = _short(getattr(exc, "verify_message", None) or exc.strerror or "certificate verification failed")
         try:
-            sock = _handshake(host, port, timeout, minimum=ssl.TLSVersion.TLSv1_2, verify=False)
-        except (ssl.SSLError, TimeoutError, OSError) as inner:
-            return _failed(str(inner), verify_error)
-    except (ssl.SSLError, TimeoutError, OSError):
-        accepted, unknown = _legacy(host, port, legacy_timeout)
+            sock = _handshake(resolved, port, timeout, minimum=ssl.TLSVersion.TLSv1_2, verify=False)
+        except (ssl.SSLError, TimeoutError, OSError, ConnectError) as inner:
+            return _failed(f"TLS handshake failed for {host}:{port} ({inner.__class__.__name__})", verify_error)
+    except ssl.SSLError:
+        accepted, unknown = _legacy(resolved, port, legacy_timeout)
         return TlsInfo(
             protocol=None,
             cipher=None,
@@ -38,6 +38,8 @@ def probe_tls(host: str, port: int, timeout: float) -> TlsInfo:
             legacy_unknown=unknown,
             handshake_error=f"TLS 1.2+ handshake failed for {host}:{port}",
         )
+    except (TimeoutError, OSError, ConnectError):
+        return _failed(f"TLS connection to {host}:{port} failed", None)
     try:
         protocol = sock.version()
         cipher_bits = sock.cipher()
@@ -45,7 +47,7 @@ def probe_tls(host: str, port: int, timeout: float) -> TlsInfo:
         subject, not_after = _certificate(sock, verified)
     finally:
         sock.close()
-    accepted, unknown = _legacy(host, port, legacy_timeout)
+    accepted, unknown = _legacy(resolved, port, legacy_timeout)
     return TlsInfo(
         protocol=protocol,
         cipher=cipher,
@@ -69,12 +71,12 @@ def _failed(handshake_error: str, verify_error: str | None) -> TlsInfo:
         subject=None,
         legacy_accepted=(),
         legacy_unknown=(),
-        handshake_error=handshake_error,
+        handshake_error=_short(handshake_error),
     )
 
 
 def _handshake(
-    host: str,
+    resolved: ResolvedHost,
     port: int,
     timeout: float,
     *,
@@ -93,9 +95,9 @@ def _handshake(
     else:
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
-    raw = socket.create_connection((host, port), timeout=timeout)
+    raw = connect_pinned(resolved.addresses, port, timeout)
     try:
-        return context.wrap_socket(raw, server_hostname=host)
+        return context.wrap_socket(raw, server_hostname=resolved.name)
     except Exception:
         raw.close()
         raise
@@ -127,15 +129,16 @@ def _common_name(subject: object) -> str | None:
             continue
         for item in rdn:
             if isinstance(item, tuple) and len(item) == 2 and item[0] == "commonName":
-                return str(item[1])
+                value = _short(str(item[1]), 200)
+                return value or None
     return None
 
 
-def _legacy(host: str, port: int, timeout: float) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def _legacy(resolved: ResolvedHost, port: int, timeout: float) -> tuple[tuple[str, ...], tuple[str, ...]]:
     accepted: list[str] = []
     unknown: list[str] = []
     for label, version in _LEGACY:
-        result = _legacy_one(host, port, timeout, version)
+        result = _legacy_one(resolved, port, timeout, version)
         if result is True:
             accepted.append(label)
         elif result is None:
@@ -143,7 +146,7 @@ def _legacy(host: str, port: int, timeout: float) -> tuple[tuple[str, ...], tupl
     return tuple(accepted), tuple(unknown)
 
 
-def _legacy_one(host: str, port: int, timeout: float, version: ssl.TLSVersion) -> bool | None:
+def _legacy_one(resolved: ResolvedHost, port: int, timeout: float, version: ssl.TLSVersion) -> bool | None:
     try:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.check_hostname = False
@@ -153,11 +156,11 @@ def _legacy_one(host: str, port: int, timeout: float, version: ssl.TLSVersion) -
     except ValueError:
         return None
     try:
-        raw = socket.create_connection((host, port), timeout=timeout)
-    except (TimeoutError, OSError):
+        raw = connect_pinned(resolved.addresses, port, timeout)
+    except (TimeoutError, OSError, ConnectError):
         return None
     try:
-        wrapped = context.wrap_socket(raw, server_hostname=host)
+        wrapped = context.wrap_socket(raw, server_hostname=resolved.name)
         wrapped.close()
         return True
     except ssl.SSLError:
@@ -167,3 +170,8 @@ def _legacy_one(host: str, port: int, timeout: float, version: ssl.TLSVersion) -
     finally:
         with contextlib.suppress(OSError):
             raw.close()
+
+
+def _short(value: str, limit: int = 200) -> str:
+    cleaned = "".join(char if char.isprintable() else " " for char in value)
+    return " ".join(cleaned.split())[:limit]

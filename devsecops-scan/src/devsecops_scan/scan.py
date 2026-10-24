@@ -7,6 +7,7 @@ from pathlib import Path
 from devsecops_scan.config import Settings
 from devsecops_scan.dast import scan_dast
 from devsecops_scan.discover import LOCK_NAMES, iter_files, read_text
+from devsecops_scan.errors import ScanError
 from devsecops_scan.models import Finding, ScanReport
 from devsecops_scan.sast import scan_sast
 from devsecops_scan.sca import (
@@ -22,6 +23,8 @@ from devsecops_scan.secrets import scan_secrets
 
 logger = logging.getLogger("devsecops_scan")
 
+_MAX_FILES = 50_000
+
 
 def run_scan(settings: Settings) -> ScanReport:
     findings: list[Finding] = []
@@ -30,8 +33,12 @@ def run_scan(settings: Settings) -> ScanReport:
     lock_dirs: set[Path] = set()
     root = settings.root
     manifest_names = {"requirements.txt", "package-lock.json", "package.json", "go.mod"}
+    seen_files = 0
 
     for path in iter_files(root, exclude=settings.exclude):
+        seen_files += 1
+        if seen_files > _MAX_FILES:
+            raise ScanError(f"refusing to scan more than {_MAX_FILES} files")
         relative = _relative(root, path)
         if path.name in LOCK_NAMES and not settings.sca:
             continue
@@ -42,7 +49,7 @@ def run_scan(settings: Settings) -> ScanReport:
         if settings.sca and path.name in manifest_names:
             if path.name == "package-lock.json":
                 lock_dirs.add(path.parent)
-            manifests.extend(_dependencies(path.name, text, relative))
+            manifests.extend(_dependencies(path.name, text, relative, root))
         if path.name in LOCK_NAMES:
             continue
         if settings.secrets:
@@ -51,9 +58,13 @@ def run_scan(settings: Settings) -> ScanReport:
             findings.extend(scan_sast(text, relative))
 
     if settings.sca:
-        dependencies = [
-            dep for dep in manifests if not (dep.path.endswith("package.json") and _parent(root, dep.path) in lock_dirs)
-        ]
+        dependencies = _dedupe(
+            [
+                dep
+                for dep in manifests
+                if not (dep.path.endswith("package.json") and _parent(root, dep.path) in lock_dirs)
+            ]
+        )
         findings.extend(
             scan_dependencies(
                 dependencies,
@@ -74,9 +85,10 @@ def run_scan(settings: Settings) -> ScanReport:
     return ScanReport(findings=tuple(findings), files_scanned=files_scanned)
 
 
-def _dependencies(name: str, text: str, relative: str) -> list[Dependency]:
+def _dependencies(name: str, text: str, relative: str, root: Path) -> list[Dependency]:
     if name == "requirements.txt":
-        return parse_requirements(text, relative)
+        base = root if root.is_dir() else root.parent
+        return parse_requirements(text, relative, root=base)
     if name == "package-lock.json":
         return parse_package_lock(text, relative)
     if name == "package.json":
@@ -97,6 +109,18 @@ def _relative(root: Path, path: Path) -> str:
     if root.is_file():
         return path.name
     return path.relative_to(root).as_posix()
+
+
+def _dedupe(dependencies: list[Dependency]) -> list[Dependency]:
+    seen: set[tuple[str, str, str | None, str, int | None]] = set()
+    unique: list[Dependency] = []
+    for dep in dependencies:
+        key = (dep.ecosystem, dep.name, dep.version, dep.path, dep.line)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(dep)
+    return unique
 
 
 def _parent(root: Path, relative: str) -> Path:

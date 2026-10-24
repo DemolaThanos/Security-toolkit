@@ -23,6 +23,13 @@ _COMPONENT_KEYS = frozenset(
 _FLOW_KEYS = frozenset({"authenticated", "data_classes", "destination", "id", "protocol", "source"})
 _TOP_KEYS = frozenset({"components", "description", "flows", "name", "trust_zones"})
 _TYPES = frozenset({"data-store", "external", "process"})
+_MAX_TEXT = 1_000_000
+_MAX_NODES = 100_000
+_MAX_ALIASES = 1_000
+_MAX_ZONES = 100
+_MAX_COMPONENTS = 200
+_MAX_FLOWS = 500
+_MAX_FIELD = 2_000
 
 
 class ModelError(Exception):
@@ -31,9 +38,25 @@ class ModelError(Exception):
         super().__init__("; ".join(problems))
 
 
+class _BoundedLoader(yaml.SafeLoader):  # type: ignore[misc]
+    def compose_node(self, parent: Any, index: Any) -> Any:
+        if self.check_event(yaml.AliasEvent):
+            count = getattr(self, "_alias_count", 0) + 1
+            self._alias_count = count
+            if count > _MAX_ALIASES:
+                raise yaml.YAMLError("YAML document exceeds the alias limit")
+        nodes = getattr(self, "_node_count", 0) + 1
+        self._node_count = nodes
+        if nodes > _MAX_NODES:
+            raise yaml.YAMLError("YAML document exceeds the node limit")
+        return super().compose_node(parent, index)
+
+
 def parse_model(text: str) -> Model:
+    if len(text) > _MAX_TEXT:
+        raise ModelError(["model is larger than 1000000 bytes"])
     try:
-        loaded = yaml.safe_load(text)
+        loaded = yaml.load(text, Loader=_BoundedLoader)
     except yaml.YAMLError as exc:
         raise ModelError([f"model is not valid YAML: {exc}"]) from exc
     if not isinstance(loaded, dict):
@@ -60,6 +83,9 @@ def _zones(raw: object, problems: list[str]) -> list[Zone]:
     if not isinstance(raw, list):
         problems.append("trust_zones must be a list")
         return []
+    if len(raw) > _MAX_ZONES:
+        problems.append(f"trust_zones has more than {_MAX_ZONES} entries")
+        return []
     zones: list[Zone] = []
     seen: set[str] = set()
     for index, item in enumerate(raw):
@@ -84,6 +110,9 @@ def _zones(raw: object, problems: list[str]) -> list[Zone]:
 def _components(raw: object, zone_ids: set[str], problems: list[str]) -> list[Component]:
     if not isinstance(raw, list):
         problems.append("components must be a list")
+        return []
+    if len(raw) > _MAX_COMPONENTS:
+        problems.append(f"components has more than {_MAX_COMPONENTS} entries")
         return []
     components: list[Component] = []
     seen: set[str] = set()
@@ -124,6 +153,9 @@ def _flows(raw: object, component_ids: set[str], problems: list[str]) -> list[Fl
         return []
     if not isinstance(raw, list):
         problems.append("flows must be a list")
+        return []
+    if len(raw) > _MAX_FLOWS:
+        problems.append(f"flows has more than {_MAX_FLOWS} entries")
         return []
     flows: list[Flow] = []
     seen: set[str] = set()
@@ -186,7 +218,14 @@ def _string(value: object, label: str, problems: list[str]) -> str:
     if not isinstance(value, str) or not value.strip():
         problems.append(f"{label} must be a non-empty string")
         return ""
-    return value.strip()
+    text = value.strip()
+    if len(text) > _MAX_FIELD:
+        problems.append(f"{label} is too long")
+        return ""
+    if any(char in text for char in "\r\n\x00"):
+        problems.append(f"{label} must be a single line")
+        return ""
+    return text
 
 
 def _bool(value: object, label: str, problems: list[str]) -> bool:
