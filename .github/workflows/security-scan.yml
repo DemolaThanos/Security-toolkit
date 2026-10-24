@@ -59,9 +59,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: security-scan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       actions: write
@@ -166,6 +171,7 @@ jobs:
     needs: scan
     if: ${{ !cancelled() && inputs.s3-bucket != '' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: read

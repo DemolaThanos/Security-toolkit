@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /devsecops-scan
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /k8s-harden
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /stride-model
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /authrecon
+    schedule:
+      interval: weekly
