@@ -53,6 +53,9 @@ def render_markdown(model: Model, threats: tuple[Threat, ...]) -> str:
             lines.append(_plain(threat.mitigation))
             lines.append("")
     lines.append("Threats are raised only where a control is missing or weak. Absence of a row is not an approval.")
+    lines.append(
+        "Generated from the YAML model. No diagram interchange, no authorization model, and no threat-model lifecycle."
+    )
     lines.append("")
     return "\n".join(lines)
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "stride-model"
 dynamic = ["version"]
-description = "Generate a STRIDE threat review from a system model."
+description = "STRIDE review generator for a YAML system model."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

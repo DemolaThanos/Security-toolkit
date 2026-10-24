@@ -75,7 +75,7 @@ def _log_format() -> str:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="stride-model",
-        description="Turn a YAML system model into a STRIDE threat review.",
+        description="Generate a STRIDE review from a YAML system model.",
     )
     parser.add_argument("--version", action="version", version=f"stride-model {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)

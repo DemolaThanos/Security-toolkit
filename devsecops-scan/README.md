@@ -41,7 +41,22 @@ advisories = "advisories/osv.json"
 
 CLI flags override the file. `require_pins` defaults to true, so a dependency with no exact version is reported at medium. `--allow-unpinned` turns that report off. An advisory with no severity label and no CVSS v3 score is treated as high. A CVSS v3 base score is used when the feed does not include a label.
 
-S3 and webhook destinations are not read from the config file. A file in the tree is untrusted, and those destinations are sent with ambient credentials. Set `DEVSECOPS_SCAN_S3_BUCKET`, `DEVSECOPS_SCAN_S3_KEY`, `DEVSECOPS_SCAN_S3_KMS_KEY_ID`, and `DEVSECOPS_SCAN_WEBHOOK_URL`, or pass the flags. The webhook bearer token is read only from `DEVSECOPS_SCAN_WEBHOOK_TOKEN`. Webhooks are HTTPS, the connection is pinned the same way as DAST, and redirects are not followed. S3 objects are encrypted with SSE-S3, or with the KMS key id when one is set. Bucket and key names are checked before the upload. `DEVSECOPS_SCAN_LOG_FORMAT=json` writes one JSON object per log line.
+## Credentials
+
+A file in the tree is untrusted. `.devsecops-scan.toml` cannot set a destination or a credential. These keys are rejected: `s3_bucket`, `s3_key`, `s3_kms_key_id`, `webhook_url`, `webhook_token`, `aws_role_arn`, `token`, `password`.
+
+| Variable | Source | Use |
+| --- | --- | --- |
+| `DEVSECOPS_SCAN_S3_BUCKET` | environment or `--s3-bucket` | bucket for the report |
+| `DEVSECOPS_SCAN_S3_KEY` | environment or `--s3-key` | object key |
+| `DEVSECOPS_SCAN_S3_KMS_KEY_ID` | environment or `--s3-kms-key-id` | KMS key id; empty uses SSE-S3 |
+| `DEVSECOPS_SCAN_WEBHOOK_URL` | environment or `--webhook-url` | HTTPS endpoint with no user, password, or token in the URL |
+| `DEVSECOPS_SCAN_WEBHOOK_TOKEN` | environment only | bearer token, for example `${WEBHOOK_TOKEN}` |
+| `AWS_ROLE_ARN` | Actions secret `secrets.AWS_ROLE_ARN` | role assumed by the publish job (`aws-role-arn`) |
+
+`DEVSECOPS_SCAN_DAST_AUTHORIZED` and `DEVSECOPS_SCAN_LOG_FORMAT` are not credentials. `DEVSECOPS_SCAN_LOG_FORMAT=json` writes one JSON object per log line.
+
+Webhooks are HTTPS, the connection is pinned the same way as DAST, and redirects are not followed. S3 objects are encrypted with SSE-S3, or with the KMS key id when one is set. Bucket and key names are checked before the upload. The workflow does not embed long-lived cloud keys.
 
 An `advisories` path in the config file has to stay inside the scan root. `--advisories` on the command line may point anywhere the operator can read.
 

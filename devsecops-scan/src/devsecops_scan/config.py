@@ -26,6 +26,20 @@ _KEYS = frozenset(
     }
 )
 
+# Destinations and credentials stay in the environment or on the CLI.
+_SINK_KEYS = frozenset(
+    {
+        "aws_role_arn",
+        "password",
+        "s3_bucket",
+        "s3_key",
+        "s3_kms_key_id",
+        "token",
+        "webhook_token",
+        "webhook_url",
+    }
+)
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -143,6 +157,16 @@ def _load_toml(path: Path) -> dict[str, object]:
         loaded = tomllib.loads(raw)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
+    sinks = set(loaded) & _SINK_KEYS
+    if sinks:
+        names = ", ".join(sorted(sinks))
+        raise ConfigError(
+            f"credential sink in config ({names}); "
+            "use DEVSECOPS_SCAN_S3_BUCKET, DEVSECOPS_SCAN_S3_KEY, DEVSECOPS_SCAN_S3_KMS_KEY_ID, "
+            "DEVSECOPS_SCAN_WEBHOOK_URL, or the matching CLI flag. "
+            "The bearer token is only DEVSECOPS_SCAN_WEBHOOK_TOKEN. "
+            "An AWS role ARN belongs in the Actions secret AWS_ROLE_ARN"
+        )
     extra = set(loaded) - _KEYS
     if extra:
         names = ", ".join(sorted(extra))

@@ -80,7 +80,7 @@ def test_config_precedence(tmp_path: Path) -> None:
         env={
             "DEVSECOPS_SCAN_S3_BUCKET": "from-env",
             "DEVSECOPS_SCAN_WEBHOOK_URL": "https://tracker.example/hook",
-            "DEVSECOPS_SCAN_WEBHOOK_TOKEN": "sekret",
+            "DEVSECOPS_SCAN_WEBHOOK_TOKEN": "${WEBHOOK_TOKEN}",
         },
     )
     assert settings.fail_on.value == "high"
@@ -88,12 +88,12 @@ def test_config_precedence(tmp_path: Path) -> None:
     assert settings.secrets is False
     assert settings.s3_bucket == "from-env"
     assert settings.webhook_url == "https://tracker.example/hook"
-    assert settings.webhook_token == "sekret"
+    assert settings.webhook_token == "${WEBHOOK_TOKEN}"
 
 
 def test_unknown_config_key(tmp_path: Path) -> None:
     config = tmp_path / "scan.toml"
-    config.write_text('webhook_token = "nope"\n', encoding="utf-8")
+    config.write_text("extra = 1\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="unknown config keys"):
         resolve_settings(
             root=tmp_path,
@@ -152,7 +152,8 @@ def test_missing_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_webhook_scrubs_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    token = "super-secret-token"
+    token = "${WEBHOOK_TOKEN}"
+    query = "trace=redacted-query"
 
     def fake_dns(host: str, *args: object, **kwargs: object) -> list[tuple[object, ...]]:
         del host, args, kwargs
@@ -165,10 +166,10 @@ def test_webhook_scrubs_token(monkeypatch: pytest.MonkeyPatch) -> None:
         raise OSError(f"boom {token} {getattr(request, 'full_url', '')}")
 
     with pytest.raises(PublishError) as caught:
-        post_webhook(b"{}", "https://tracker.example/hook?token=abc", token, 1, opener)
+        post_webhook(b"{}", f"https://tracker.example/hook?{query}", token, 1, opener)
     message = str(caught.value)
     assert token not in message
-    assert "abc" not in message
+    assert "redacted-query" not in message
     assert "tracker.example" in message
     with pytest.raises(PublishError, match="not following"):
         refuse_redirect(302)
@@ -310,9 +311,15 @@ def test_hidden_workflow_is_scanned_and_git_is_not(tmp_path: Path) -> None:
 
 def test_config_rejects_credential_sinks_and_escaped_advisories(tmp_path: Path) -> None:
     config = tmp_path / ".devsecops-scan.toml"
-    config.write_text('webhook_url = "https://evil.example/hook"\n', encoding="utf-8")
-    with pytest.raises(ConfigError, match="unknown config keys"):
+    config.write_text(
+        'webhook_url = "https://tracker.example/hook"\ns3_bucket = "audit"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="credential sink") as caught:
         _settings(tmp_path)
+    assert "webhook_url" in str(caught.value)
+    assert "s3_bucket" in str(caught.value)
+    assert "DEVSECOPS_SCAN_WEBHOOK_TOKEN" in str(caught.value)
     outside = tmp_path.parent / "osv.json"
     config.write_text(f'advisories = "{outside}"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="scan root"):

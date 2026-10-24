@@ -53,6 +53,7 @@ on:
         required: false
         default: ""
     secrets:
+      # Actions secret AWS_ROLE_ARN. The ARN is not stored in this repository.
       aws-role-arn:
         required: false
 
