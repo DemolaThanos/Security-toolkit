@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +12,8 @@ from stride_model.logsetup import configure_logging
 from stride_model.models import parse_severity
 from stride_model.parse import ModelError, parse_model
 from stride_model.render import failing, render_json, render_markdown
+
+logger = logging.getLogger("stride_model")
 
 
 def cli() -> None:
@@ -21,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     verbosity = int(args.verbose)
     try:
-        configure_logging(verbosity)
+        configure_logging(verbosity, _log_format())
         if args.command != "render":
             parser.print_help(sys.stderr)
             return 2
@@ -34,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ModelError([f"cannot read {path}: {exc}"]) from exc
         model = parse_model(text)
         threats = generate(model)
+        logger.info("rendered %s threats for %s", len(threats), model.name)
         body = render_json(model, threats) if args.format == "json" else render_markdown(model, threats)
         if args.output:
             Path(args.output).write_text(body, encoding="utf-8")
@@ -56,6 +61,15 @@ def main(argv: list[str] | None = None) -> int:
             raise
         print(f"stride-model: {exc}", file=sys.stderr)
         return 2
+
+
+def _log_format() -> str:
+    value = os.environ.get("STRIDE_MODEL_LOG_FORMAT", "text").strip().lower()
+    if not value:
+        return "text"
+    if value not in {"text", "json"}:
+        raise ValueError("STRIDE_MODEL_LOG_FORMAT must be text or json")
+    return value
 
 
 def _parser() -> argparse.ArgumentParser:

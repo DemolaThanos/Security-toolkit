@@ -117,10 +117,15 @@ def test_unknown_key() -> None:
     assert any("unknown keys" in problem for problem in caught.value.problems)
 
 
-def test_cli_gate(tmp_path: Path) -> None:
+def test_cli_gate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "model.yaml"
     path.write_text(CHECKOUT, encoding="utf-8")
     assert main(["render", str(path), "--format", "json"]) == 0
+    payload = __import__("json").loads(capsys.readouterr().out)
+    assert payload["trust_zones"][0]["id"] == "internet"
+    assert payload["components"][1]["id"] == "api"
+    assert payload["flows"][0]["protocol"] == "https"
+    assert payload["threats"][0]["id"] == "dos:api"
     assert main(["render", str(path), "--fail-on", "low"]) == 1
     assert main(["render", str(path), "--fail-on", "high"]) == 0
 
@@ -217,6 +222,11 @@ flows:
     rendered = render_markdown(piped, generate(piped))
     assert "tcp\\|raw" in rendered
     assert "| tcp|raw" not in rendered
+
+    quoted = parse_model(BAD.replace("protocol: http", "protocol: https`evil", 1))
+    rendered = render_markdown(quoted, generate(quoted))
+    assert "https'evil" in rendered
+    assert "https`evil" not in rendered
 
 
 def test_internet_zone_is_external_and_large_models_stop(tmp_path: Path) -> None:

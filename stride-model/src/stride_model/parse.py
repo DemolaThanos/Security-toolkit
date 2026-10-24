@@ -56,7 +56,7 @@ def parse_model(text: str) -> Model:
     if len(text) > _MAX_TEXT:
         raise ModelError(["model is larger than 1000000 bytes"])
     try:
-        loaded = yaml.load(text, Loader=_BoundedLoader)
+        loaded = yaml.load(text, Loader=_BoundedLoader)  # noqa: S506
     except yaml.YAMLError as exc:
         raise ModelError([f"model is not valid YAML: {exc}"]) from exc
     if not isinstance(loaded, dict):

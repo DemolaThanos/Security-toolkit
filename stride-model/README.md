@@ -19,7 +19,9 @@ stride-model render examples/checkout.yaml
 stride-model render model.yaml --format json --fail-on high
 ```
 
-Exit codes: `0` the model rendered (and, with `--fail-on`, nothing reached the threshold), `1` a threat is at or above `--fail-on`, `2` the model is invalid. Without `--fail-on` the command is a generator and exits `0`. A model larger than 1 MB is rejected.
+Exit codes: `0` the model rendered (and, with `--fail-on`, nothing reached the threshold), `1` a threat is at or above `--fail-on`, `2` the model is invalid. Without `--fail-on` the command is a generator and exits `0`. A model larger than 1 MB is rejected. `STRIDE_MODEL_LOG_FORMAT=json` writes one JSON object per log line.
+
+JSON output includes the trust zones, components, and flows that were assessed, then the threats. Markdown table cells escape `|` and replace backticks so a protocol or id cannot break the row.
 
 ## Model
 
