@@ -309,6 +309,28 @@ def test_hidden_workflow_is_scanned_and_git_is_not(tmp_path: Path) -> None:
     assert paths == {".github/workflows/ci.yml"}
 
 
+def test_no_config_keeps_a_committed_file_from_silencing_the_scan(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("eval(user_input)\n", encoding="utf-8")
+    (tmp_path / ".devsecops-scan.toml").write_text(
+        "secrets = false\nsast = false\nsca = false\n",
+        encoding="utf-8",
+    )
+    assert main(["scan", str(tmp_path), "--fail-on", "high"]) == 0
+    assert main(["scan", str(tmp_path), "--no-config", "--fail-on", "high"]) == 1
+    assert main(["scan", str(tmp_path), "--no-config", "--config", "other.toml"]) == 2
+
+
+def test_unreadable_tree_exits_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert main(["scan", str(empty)]) == 2
+    assert "no files were scanned" in capsys.readouterr().err
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / ".devsecops-scan.toml").write_text("max_bytes = 1\n", encoding="utf-8")
+    assert main(["scan", str(tmp_path)]) == 2
+    assert "larger than" in capsys.readouterr().err
+
+
 def test_config_rejects_credential_sinks_and_escaped_advisories(tmp_path: Path) -> None:
     config = tmp_path / ".devsecops-scan.toml"
     config.write_text(

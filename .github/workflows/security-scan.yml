@@ -150,7 +150,7 @@ jobs:
         run: |
           set -euo pipefail
           target="$(python -c 'import os; from pathlib import Path; root = Path("work").resolve(); raw = os.environ["SCAN_PATH"]; candidate = Path(raw); target = (root / candidate).resolve(); target.relative_to(root); print(target)')"
-          cmd=(devsecops-scan scan "$target" --fail-on "$FAIL_ON" --format sarif --output work/devsecops-scan.sarif)
+          cmd=(devsecops-scan scan "$target" --no-config --fail-on "$FAIL_ON" --format sarif --output work/devsecops-scan.sarif)
           if [[ -n "$DAST_URL" ]]; then
             if [[ "$DAST_AUTHORIZED" != "true" ]]; then
               echo "dast-url requires dast-authorized: true" >&2

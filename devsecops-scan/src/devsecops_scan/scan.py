@@ -86,6 +86,10 @@ def run_scan(settings: Settings) -> ScanReport:
     findings.sort(key=lambda item: (item.path or "", item.line or 0, item.rule_id))
     if files_skipped:
         logger.warning("skipped %s files larger than %s bytes", files_skipped, settings.max_bytes)
+    if files_scanned == 0 and not settings.dast_url:
+        if files_skipped:
+            raise ScanError(f"no files were scanned; {files_skipped} were larger than {settings.max_bytes} bytes")
+        raise ScanError("no files were scanned")
     logger.info("scanned %s files, %s findings", files_scanned, len(findings))
     return ScanReport(findings=tuple(findings), files_scanned=files_scanned, files_skipped=files_skipped)
 

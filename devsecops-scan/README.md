@@ -22,7 +22,7 @@ devsecops-scan scan . --dast-url https://app.example --i-am-authorized
 
 `--i-am-authorized` (or `DEVSECOPS_SCAN_DAST_AUTHORIZED=1`) is required before any DAST request. The scanner resolves each host once and connects to those addresses. A redirect back to a host it already resolved reuses that answer, so a second DNS reply cannot move the connection. It refuses link-local addresses, including cloud metadata, and non-canonical spellings such as hex or octal. A TLS failure stays a failure: verification is not turned off for a second try. Redirects may continue to another public host, up to five hops. A redirect into a private or link-local address is refused.
 
-Exit codes: `0` nothing at or above the threshold, `1` findings, `2` the scan did not finish.
+Exit codes: `0` nothing at or above the threshold, `1` findings, `2` the scan did not finish. A path that yields no readable file exits 2. That covers an empty directory, an exclude that matches every file, and a tree whose files are all over `max_bytes`. When `--dast-url` is set, the header check still runs.
 
 ## Configuration
 
@@ -39,7 +39,7 @@ require_pins = true
 advisories = "advisories/osv.json"
 ```
 
-CLI flags override the file. `require_pins` defaults to true, so a dependency with no exact version is reported at medium. `--allow-unpinned` turns that report off. An advisory with no severity label and no CVSS v3 score is treated as high. A CVSS v3 base score is used when the feed does not include a label.
+CLI flags override the file. `--no-config` skips the file, so a committed config cannot turn checks off, exclude the tree, lower `max_bytes`, or replace the advisory feed. `require_pins` defaults to true, so a dependency with no exact version is reported at medium. `--allow-unpinned` turns that report off. An advisory with no severity label and no CVSS v3 score is treated as high. A CVSS v3 base score is used when the feed does not include a label.
 
 ## Credentials
 
@@ -89,7 +89,7 @@ jobs:
       aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
 ```
 
-`toolkit-ref` has to be that commit SHA. A branch name is rejected. The scan path is relative to the caller checkout. The scan job does not request `id-token`. When `s3-bucket` is set, a second job assumes `aws-role-arn` and uploads the SARIF. The workflow does not embed long-lived cloud keys.
+`toolkit-ref` has to be that commit SHA. A branch name is rejected. The scan path is relative to the caller checkout. The composite action and this workflow both pass `--no-config`. The scan job does not request `id-token`. When `s3-bucket` is set, a second job assumes `aws-role-arn` and uploads the SARIF. The workflow does not embed long-lived cloud keys.
 
 ## Rules
 

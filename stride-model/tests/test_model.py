@@ -122,6 +122,9 @@ def test_cli_gate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path.write_text(CHECKOUT, encoding="utf-8")
     assert main(["render", str(path), "--format", "json"]) == 0
     payload = __import__("json").loads(capsys.readouterr().out)
+    assert payload["kind"] == "stride-review"
+    assert "YAML system model" in payload["scope"]
+    assert "threat-model lifecycle" in payload["scope"]
     assert payload["trust_zones"][0]["id"] == "internet"
     assert payload["components"][1]["id"] == "api"
     assert payload["flows"][0]["protocol"] == "https"
@@ -227,6 +230,25 @@ flows:
     rendered = render_markdown(quoted, generate(quoted))
     assert "https'evil" in rendered
     assert "https`evil" not in rendered
+    assert rendered.splitlines()[2] == "STRIDE review generated from one YAML system model."
+
+    headed = parse_model(BAD.replace("id: call", "id: call`x", 1))
+    rendered = render_markdown(headed, generate(headed))
+    assert "### `spoofing:call'x`" in rendered
+    assert "call`x" not in rendered
+
+
+def test_second_document_is_rejected_and_help_states_the_scope(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(ModelError, match="single YAML document"):
+        parse_model(CHECKOUT + "\n---\nname: other\ndescription: hidden\ntrust_zones: []\ncomponents: []\n")
+    assert "dos:api" in {item.id for item in generate(parse_model(CHECKOUT + "\n---\n"))}
+    with pytest.raises(SystemExit) as caught:
+        main(["render", "--help"])
+    assert caught.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "STRIDE review" in help_text
+    assert "YAML" in help_text
+    assert "threat-model lifecycle" in help_text
 
 
 def test_internet_zone_is_external_and_large_models_stop(tmp_path: Path) -> None:

@@ -35,7 +35,7 @@ stride-model render model.yaml --format json --fail-on high
 
 Exit codes: `0` the review rendered (and, with `--fail-on`, nothing reached the threshold), `1` a threat is at or above `--fail-on`, `2` the model is invalid. Without `--fail-on` the command is a generator and exits `0`. A model larger than 1 MB is rejected. `STRIDE_MODEL_LOG_FORMAT=json` writes one JSON object per log line.
 
-JSON output includes the trust zones, components, and flows that were assessed, then the threats. Markdown escapes `|` and replaces backticks so a protocol or id cannot break the rendered review.
+JSON output names this generator and its scope, then the trust zones, components, and flows that were assessed, then the threats. Markdown starts with the same scope line. It escapes `|` and replaces backticks so a protocol or id cannot break a table cell or a heading. The file has to be one YAML document. A second document is rejected.
 
 ## Model
 

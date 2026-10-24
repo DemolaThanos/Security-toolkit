@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
             report_format=args.format,
             output=args.output,
             timeout=float(args.timeout),
+            ignore_config=bool(args.no_config),
         )
         report = run_scan(settings)
         body = render(report, settings.report_format).encode("utf-8")
@@ -122,6 +123,11 @@ def _parser() -> argparse.ArgumentParser:
     scan = sub.add_parser("scan", help="scan a file or directory")
     scan.add_argument("path", nargs="?", default=".")
     scan.add_argument("--config", help="TOML config path")
+    scan.add_argument(
+        "--no-config",
+        action="store_true",
+        help="do not read .devsecops-scan.toml from the tree being scanned",
+    )
     scan.add_argument("--fail-on", choices=["critical", "high", "medium", "low", "info"])
     scan.add_argument("--format", choices=["text", "json", "sarif"])
     scan.add_argument("--output")

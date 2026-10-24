@@ -13,7 +13,7 @@ from k8s_harden.rules import ignores, lint_document, network_policy_namespace, w
 
 logger = logging.getLogger("k8s_harden.lint")
 
-_SKIP_DIRS = frozenset({".git", "node_modules", "vendor", "__pycache__", ".tox", ".nox"})
+_SKIP_DIRS = frozenset({".git", ".hg", ".svn", "node_modules", "vendor", "__pycache__", ".tox", ".nox"})
 _MAX_FILES = 10_000
 
 
@@ -70,7 +70,9 @@ def _manifests(root: Path, exclude: tuple[str, ...]) -> tuple[list[Path], bool]:
     found: list[Path] = []
     truncated = False
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = sorted(name for name in dirnames if name not in _SKIP_DIRS and not name.startswith("."))
+        # Hidden directories are part of the tree. VCS metadata and dependency
+        # caches are not manifests.
+        dirnames[:] = sorted(name for name in dirnames if name not in _SKIP_DIRS)
         for name in sorted(filenames):
             if Path(name).suffix.lower() not in {".yaml", ".yml", ".json"}:
                 continue

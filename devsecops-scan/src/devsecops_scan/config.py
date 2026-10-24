@@ -86,11 +86,17 @@ def resolve_settings(
     output: str | None,
     timeout: float,
     env: Mapping[str, str] | None = None,
+    ignore_config: bool = False,
 ) -> Settings:
     if not root.exists():
         raise ConfigError(f"path does not exist: {root}")
     environment = env if env is not None else os.environ
-    config_file = config_path or _default_config(root)
+    if ignore_config:
+        if config_path is not None:
+            raise ConfigError("--config cannot be combined with --no-config")
+        config_file = None
+    else:
+        config_file = config_path or _default_config(root)
     data: dict[str, object] = {}
     config_dir = root if root.is_dir() else root.parent
     if config_file is not None:

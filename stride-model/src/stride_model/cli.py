@@ -79,7 +79,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"stride-model {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
-    render = sub.add_parser("render", help="render a model")
+    render = sub.add_parser(
+        "render",
+        help="generate a STRIDE review from a YAML model",
+        description=(
+            "Generate a STRIDE review from one YAML system model. "
+            "Lists threats where a declared control is missing or weak. "
+            "This is a review generator. It does not exchange diagrams, model authorization, "
+            "or track a threat-model lifecycle."
+        ),
+    )
     render.add_argument("path")
     render.add_argument("--format", default="markdown", choices=["markdown", "json"])
     render.add_argument("--output")

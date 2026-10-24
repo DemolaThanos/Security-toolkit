@@ -463,6 +463,47 @@ metadata:
     assert any(item["ruleId"] == "resources-missing" for item in payload["runs"][0]["results"])
 
 
+def test_hidden_manifest_is_checked_and_git_is_not(tmp_path: Path) -> None:
+    hidden = tmp_path / ".deploy"
+    hidden.mkdir()
+    _write(
+        hidden / "pod.yaml",
+        """
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sneaky
+  namespace: payments
+spec:
+  containers:
+    - name: app
+      image: ghcr.io/example/app:1
+      securityContext:
+        privileged: true
+""",
+    )
+    git = tmp_path / ".git"
+    git.mkdir()
+    _write(
+        git / "pod.yaml",
+        """
+apiVersion: v1
+kind: Pod
+metadata:
+  name: from-git
+spec:
+  containers:
+    - name: app
+      image: ghcr.io/example/app:1
+      securityContext:
+        privileged: true
+""",
+    )
+    report = lint_path(tmp_path, max_bytes=1_000_000, exclude=())
+    paths = {item.path for item in report.findings if item.rule_id == "privileged"}
+    assert paths == {".deploy/pod.yaml"}
+
+
 def test_empty_directory_and_file_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     empty = tmp_path / "empty"
     empty.mkdir()

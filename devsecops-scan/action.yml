@@ -74,7 +74,7 @@ runs:
         print(target)
         PY
         target="$(cat "${RUNNER_TEMP:-/tmp}/scan-target")"
-        cmd=(devsecops-scan scan "$target" --fail-on "$FAIL_ON" --format sarif --output "$report")
+        cmd=(devsecops-scan scan "$target" --no-config --fail-on "$FAIL_ON" --format sarif --output "$report")
         if [[ -n "$ADVISORIES" ]]; then
           cmd+=(--advisories "$ADVISORIES")
         fi

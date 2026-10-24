@@ -53,6 +53,8 @@ metadata:
 
 A NetworkPolicy is counted if it is present. The checker does not judge whether the policy is a default deny.
 
+Hidden directories are checked. `.git`, `.hg`, `.svn`, `node_modules`, `vendor`, `__pycache__`, `.tox`, and `.nox` are skipped.
+
 Pod `securityContext` contributes only `runAsUser`, `runAsNonRoot`, `runAsGroup`, and `seccompProfile`. `privileged`, `allowPrivilegeEscalation`, capabilities, and the root filesystem are read from the container. `exclude` matches a path prefix or a glob, not a substring. Symlinks that leave the directory you passed are skipped.
 
 ## License

@@ -15,7 +15,16 @@ def _cell(value: str) -> str:
 
 
 def render_markdown(model: Model, threats: tuple[Threat, ...]) -> str:
-    lines = [f"# {_plain(model.name)}", "", _plain(model.description), "", "## Trust zones", ""]
+    lines = [
+        f"# {_plain(model.name)}",
+        "",
+        "STRIDE review generated from one YAML system model.",
+        "",
+        _plain(model.description),
+        "",
+        "## Trust zones",
+        "",
+    ]
     for zone in model.zones:
         marker = " (external)" if zone.external else ""
         lines.append(f"- `{_plain(zone.id)}`{marker} — {_plain(zone.description)}")
@@ -48,7 +57,7 @@ def render_markdown(model: Model, threats: tuple[Threat, ...]) -> str:
             )
         lines.extend(["", "## Mitigations", ""])
         for threat in threats:
-            lines.append(f"### `{threat.id}`")
+            lines.append(f"### `{_plain(threat.id)}`")
             lines.append("")
             lines.append(_plain(threat.mitigation))
             lines.append("")
@@ -62,6 +71,11 @@ def render_markdown(model: Model, threats: tuple[Threat, ...]) -> str:
 
 def render_json(model: Model, threats: tuple[Threat, ...]) -> str:
     payload = {
+        "kind": "stride-review",
+        "scope": (
+            "STRIDE review generated from one YAML system model. "
+            "No diagram interchange, no authorization model, and no threat-model lifecycle."
+        ),
         "name": model.name,
         "description": model.description,
         "trust_zones": [
