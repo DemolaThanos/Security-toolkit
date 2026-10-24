@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "k8s-harden"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Lint Kubernetes manifests for RBAC, secret, and workload-isolation mistakes."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,6 +20,9 @@ k8s-harden = "k8s_harden.cli:cli"
 
 [project.urls]
 Repository = "https://github.com/DemolaThanos/Security-toolkit"
+
+[tool.setuptools.dynamic]
+version = { attr = "k8s_harden.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -37,7 +40,10 @@ line-length = 120
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
 
 [tool.mypy]
 python_version = "3.11"

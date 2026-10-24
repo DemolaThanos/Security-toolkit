@@ -413,6 +413,73 @@ def test_alias_limit_is_not_treated_as_helm(tmp_path: Path, monkeypatch: pytest.
     assert "limit" in report.errors[0]
 
 
+def test_zero_limits_service_account_and_sarif(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    manifest = tmp_path / "pod.yaml"
+    _write(
+        manifest,
+        """
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample
+  namespace: payments
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: app
+      image: nginx:1.2.3
+      resources:
+        limits:
+          cpu: "0"
+          memory: 128Mi
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault
+""",
+    )
+    report = lint_path(manifest, max_bytes=1_000_000, exclude=())
+    assert any(item.rule_id == "resources-missing" and "cpu" in item.message for item in report.findings)
+    account = tmp_path / "account.yaml"
+    _write(
+        account,
+        """
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api
+  namespace: payments
+""",
+    )
+    report = lint_path(account, max_bytes=1_000_000, exclude=())
+    assert {item.rule_id for item in report.findings} == {"automount-token"}
+    assert main(["check", str(manifest), "--format", "sarif", "--fail-on", "medium"]) == 1
+    payload = __import__("json").loads(capsys.readouterr().out)
+    assert payload["version"] == "2.1.0"
+    assert any(item["ruleId"] == "resources-missing" for item in payload["runs"][0]["results"])
+
+
+def test_empty_directory_and_file_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert main(["check", str(empty)]) == 2
+    import k8s_harden.lint as lint_mod
+
+    monkeypatch.setattr(lint_mod, "_MAX_FILES", 1)
+    first = tmp_path / "a.yaml"
+    second = tmp_path / "b.yaml"
+    _write(first, "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n")
+    _write(second, "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: b\n")
+    report = lint_path(tmp_path, max_bytes=1_000_000, exclude=())
+    assert report.findings == ()
+    assert report.errors
+    assert "10" not in report.errors[0] or "more than" in report.errors[0]
+
+
 def test_template_annotation_ignore(tmp_path: Path) -> None:
     manifest = tmp_path / "deploy.yaml"
     _write(

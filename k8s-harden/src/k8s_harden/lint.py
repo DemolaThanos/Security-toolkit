@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import stat
 from fnmatch import fnmatch
@@ -10,11 +11,20 @@ from k8s_harden.load import load_file
 from k8s_harden.models import Finding, LintReport, Severity
 from k8s_harden.rules import ignores, lint_document, network_policy_namespace, workload_namespace
 
-_SKIP_DIRS = frozenset({".git", "node_modules", "vendor", "__pycache__"})
+logger = logging.getLogger("k8s_harden.lint")
+
+_SKIP_DIRS = frozenset({".git", "node_modules", "vendor", "__pycache__", ".tox", ".nox"})
+_MAX_FILES = 10_000
 
 
 def lint_path(root: Path, *, max_bytes: int, exclude: tuple[str, ...]) -> LintReport:
-    files = list(_manifests(root, exclude))
+    files, truncated = _manifests(root, exclude)
+    if truncated:
+        return LintReport(
+            findings=(),
+            errors=(f"refusing to scan more than {_MAX_FILES} manifests",),
+            files_checked=len(files),
+        )
     errors: list[str] = []
     documents: list[tuple[str, dict[str, Any]]] = []
     for path in files:
@@ -51,24 +61,31 @@ def lint_path(root: Path, *, max_bytes: int, exclude: tuple[str, ...]) -> LintRe
             )
         )
     findings.sort(key=lambda item: (item.path, item.location, item.rule_id))
-    return LintReport(findings=tuple(findings), errors=tuple(errors))
+    return LintReport(findings=tuple(findings), errors=tuple(errors), files_checked=len(files))
 
 
-def _manifests(root: Path, exclude: tuple[str, ...]) -> list[Path]:
+def _manifests(root: Path, exclude: tuple[str, ...]) -> tuple[list[Path], bool]:
     if root.is_file():
-        return [root]
+        return [root], False
     found: list[Path] = []
+    truncated = False
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = [name for name in dirnames if name not in _SKIP_DIRS and not name.startswith(".")]
-        for name in filenames:
+        dirnames[:] = sorted(name for name in dirnames if name not in _SKIP_DIRS and not name.startswith("."))
+        for name in sorted(filenames):
             if Path(name).suffix.lower() not in {".yaml", ".yml", ".json"}:
                 continue
             path = Path(dirpath) / name
             relative = path.relative_to(root).as_posix()
-            if _excluded(relative, exclude) or not _contained_file(root, path):
+            if _excluded(relative, exclude):
+                continue
+            if not _contained_file(root, path):
+                logger.warning("skip %s", relative)
                 continue
             found.append(path)
-    return sorted(found)
+            if len(found) > _MAX_FILES:
+                truncated = True
+                return found, truncated
+    return sorted(found), truncated
 
 
 def _excluded(relative: str, patterns: tuple[str, ...]) -> bool:

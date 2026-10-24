@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import argparse
-import json
+import os
 import sys
 from pathlib import Path
 
 from k8s_harden import __version__
 from k8s_harden.lint import lint_path
 from k8s_harden.logsetup import configure_logging
-from k8s_harden.models import LintReport, parse_severity
+from k8s_harden.models import parse_severity
+from k8s_harden.report import render
 
 
 class LintError(Exception):
@@ -24,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     verbosity = int(args.verbose)
     try:
-        configure_logging(verbosity)
+        configure_logging(verbosity, _log_format())
         if args.command != "check":
             parser.print_help(sys.stderr)
             return 2
@@ -38,11 +39,14 @@ def main(argv: list[str] | None = None) -> int:
             max_bytes=args.max_bytes or 1_000_000,
             exclude=tuple(args.exclude or []),
         )
-        body = _render(report, args.format)
+        body = render(report, args.format)
         if args.output:
             Path(args.output).write_text(body, encoding="utf-8")
         else:
             sys.stdout.write(body)
+        if report.files_checked == 0 and not report.errors:
+            print("k8s-harden: no manifests found", file=sys.stderr)
+            return 2
         if report.errors:
             for error in report.errors:
                 print(f"k8s-harden: {error}", file=sys.stderr)
@@ -61,21 +65,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
 
-def _render(report: LintReport, report_format: str) -> str:
-    if report_format == "json":
-        payload = {
-            "findings": [item.to_dict() for item in report.findings],
-            "errors": list(report.errors),
-        }
-        return json.dumps(payload, indent=2) + "\n"
-    if not report.findings:
-        return "no findings\n"
-    lines = [
-        f"{item.severity.value}\t{item.rule_id}\t{item.path}\t{item.location}\t{item.message}"
-        for item in report.findings
-    ]
-    lines.append(f"{len(report.findings)} findings")
-    return "\n".join(lines) + "\n"
+def _log_format() -> str:
+    value = os.environ.get("K8S_HARDEN_LOG_FORMAT", "text").strip().lower()
+    if not value:
+        return "text"
+    if value not in {"text", "json"}:
+        raise LintError("K8S_HARDEN_LOG_FORMAT must be text or json")
+    return value
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -88,7 +84,7 @@ def _parser() -> argparse.ArgumentParser:
     check = sub.add_parser("check", help="check a file or directory of manifests")
     check.add_argument("path", nargs="?", default=".")
     check.add_argument("--fail-on", default="high", choices=["critical", "high", "medium", "low", "info"])
-    check.add_argument("--format", default="text", choices=["text", "json"])
+    check.add_argument("--format", default="text", choices=["text", "json", "sarif"])
     check.add_argument("--output")
     check.add_argument("--exclude", action="append", default=[])
     check.add_argument("--max-bytes", type=int)
