@@ -1,0 +1,40 @@
+name: checkout
+description: Card checkout API and its order store.
+trust_zones:
+  - id: internet
+    description: Customer network
+    external: true
+  - id: app
+    description: Application tier
+  - id: data
+    description: Data tier
+components:
+  - id: browser
+    type: external
+    zone: internet
+    description: Customer browser
+  - id: api
+    type: process
+    zone: app
+    description: Checkout API
+    logs_actions: true
+    rate_limited: true
+  - id: orders
+    type: data-store
+    zone: data
+    description: Orders database
+    encrypted_at_rest: true
+    logs_actions: true
+flows:
+  - id: submit
+    source: browser
+    destination: api
+    protocol: https
+    authenticated: true
+    data_classes: [credential, payment]
+  - id: persist
+    source: api
+    destination: orders
+    protocol: tls
+    authenticated: true
+    data_classes: [payment]
