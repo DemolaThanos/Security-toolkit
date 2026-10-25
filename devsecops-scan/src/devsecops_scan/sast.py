@@ -54,6 +54,13 @@ _RULES = (
         "shell=True passes the command through a shell",
     ),
     _rule(
+        "os-system",
+        Severity.HIGH,
+        _PY,
+        r"(?<![\w.])os\.(?:system|popen)\s*\(",
+        "os.system or os.popen runs a command through a shell",
+    ),
+    _rule(
         "yaml-unsafe-load",
         Severity.HIGH,
         _PY,

@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import SplitResult, urlsplit
 
+from devsecops_scan import __version__
 from devsecops_scan.errors import PublishError, TargetError
 from devsecops_scan.net import open_http, resolve_host
 
@@ -71,7 +72,7 @@ def post_webhook(
         try:
             headers = {
                 "Content-Type": "application/json",
-                "User-Agent": "devsecops-scan/0.1.0",
+                "User-Agent": f"devsecops-scan/{__version__}",
             }
             if token:
                 headers["Authorization"] = f"Bearer {token}"
@@ -121,9 +122,11 @@ def _via_opener(
 ) -> None:
     from urllib.request import Request
 
-    request = Request(url, data=body, method="POST")
+    # The URL is already constrained to https. This hook exists so tests can
+    # observe the request without opening a socket.
+    request = Request(url, data=body, method="POST")  # noqa: S310
     request.add_header("Content-Type", "application/json")
-    request.add_header("User-Agent", "devsecops-scan/0.1.0")
+    request.add_header("User-Agent", f"devsecops-scan/{__version__}")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
     try:

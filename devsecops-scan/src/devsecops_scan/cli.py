@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     verbosity = int(args.verbose)
     try:
-        configure_logging(verbosity)
+        configure_logging(verbosity, _log_format("DEVSECOPS_SCAN_LOG_FORMAT"))
         if args.command == "publish":
             _publish(args)
             return 0
@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
             no_secrets=bool(args.no_secrets),
             no_sast=bool(args.no_sast),
             no_sca=bool(args.no_sca),
-            require_pins=True if args.require_pins else None,
+            require_pins=False if args.allow_unpinned else (True if args.require_pins else None),
             advisories=args.advisories,
             dast_url=args.dast_url,
             dast_authorized=bool(args.i_am_authorized) or _env_flag("DEVSECOPS_SCAN_DAST_AUTHORIZED"),
@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
             report_format=args.format,
             output=args.output,
             timeout=float(args.timeout),
+            ignore_config=bool(args.no_config),
         )
         report = run_scan(settings)
         body = render(report, settings.report_format).encode("utf-8")
@@ -122,6 +123,11 @@ def _parser() -> argparse.ArgumentParser:
     scan = sub.add_parser("scan", help="scan a file or directory")
     scan.add_argument("path", nargs="?", default=".")
     scan.add_argument("--config", help="TOML config path")
+    scan.add_argument(
+        "--no-config",
+        action="store_true",
+        help="do not read .devsecops-scan.toml from the tree being scanned",
+    )
     scan.add_argument("--fail-on", choices=["critical", "high", "medium", "low", "info"])
     scan.add_argument("--format", choices=["text", "json", "sarif"])
     scan.add_argument("--output")
@@ -130,7 +136,13 @@ def _parser() -> argparse.ArgumentParser:
     scan.add_argument("--no-secrets", action="store_true")
     scan.add_argument("--no-sast", action="store_true")
     scan.add_argument("--no-sca", action="store_true")
-    scan.add_argument("--require-pins", action="store_true")
+    pins = scan.add_mutually_exclusive_group()
+    pins.add_argument("--require-pins", action="store_true", help="report dependencies that have no exact version")
+    pins.add_argument(
+        "--allow-unpinned",
+        action="store_true",
+        help="do not report dependencies that have no exact version",
+    )
     scan.add_argument("--advisories", help="OSV JSON feed; defaults to the small starter file")
     scan.add_argument("--dast-url", help="authorized passive header check of one URL")
     scan.add_argument(
@@ -151,6 +163,17 @@ def _env_flag(name: str) -> bool:
     import os
 
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
+
+
+def _log_format(name: str) -> str:
+    import os
+
+    value = os.environ.get(name, "text").strip().lower()
+    if not value:
+        return "text"
+    if value not in {"text", "json"}:
+        raise ConfigError(f"{name} must be text or json")
+    return value
 
 
 def _default_key(extension: str) -> str:

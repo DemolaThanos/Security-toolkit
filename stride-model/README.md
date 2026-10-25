@@ -1,8 +1,22 @@
 # stride-model
 
-Turns a small system model into a STRIDE review: spoofing, tampering, repudiation, information disclosure, denial of service, and elevation of privilege.
+STRIDE review generator. It reads a YAML system model and lists threats where a declared control is missing or weak: spoofing, tampering, repudiation, information disclosure, denial of service, and elevation of privilege.
 
-It raises a threat where the model is missing a control. A missing row is not an approval of the design. There are no attack steps and no payloads.
+The output is that review. A missing row is not an approval of the design. The generator does not emit attack steps or payloads.
+
+## Scope
+
+In scope:
+
+- one YAML model of trust zones, components, and flows
+- a fixed STRIDE catalog applied to the controls declared in that model
+- markdown or JSON, with an optional `--fail-on` threshold
+
+Out of scope:
+
+- diagram interchange (no Threat Dragon, draw.io, or other model import or export)
+- an authorization model (`authenticated` is a boolean on a flow)
+- a threat-model lifecycle (no review workflow, risk acceptance, or ticket tracking)
 
 ## Install
 
@@ -19,7 +33,9 @@ stride-model render examples/checkout.yaml
 stride-model render model.yaml --format json --fail-on high
 ```
 
-Exit codes: `0` the model rendered (and, with `--fail-on`, nothing reached the threshold), `1` a threat is at or above `--fail-on`, `2` the model is invalid. Without `--fail-on` the command is a generator and exits `0`. A model larger than 1 MB is rejected.
+Exit codes: `0` the review rendered (and, with `--fail-on`, nothing reached the threshold), `1` a threat is at or above `--fail-on`, `2` the model is invalid. Without `--fail-on` the command is a generator and exits `0`. A model larger than 1 MB is rejected. `STRIDE_MODEL_LOG_FORMAT=json` writes one JSON object per log line.
+
+JSON output names this generator and its scope, then the trust zones, components, and flows that were assessed, then the threats. Markdown starts with the same scope line. It escapes `|` and replaces backticks so a protocol or id cannot break a table cell or a heading. The file has to be one YAML document. A second document is rejected.
 
 ## Model
 
@@ -54,7 +70,7 @@ Zone ids `internet`, `public`, `external`, and `untrusted` are external when `ex
 
 Sensitive classes are `credential`, `payment`, `pii`, `phi`, `secret`, `session`, and `token`. Other class names are kept and treated as not sensitive.
 
-`examples/checkout.yaml` declares authentication, TLS, logging, encryption, and a rate limit. The only residual threat is denial of service at low severity, because the limit is declared and still has to be confirmed.
+`examples/checkout.yaml` declares authentication, TLS, logging, encryption, and a rate limit. The residual threat is denial of service at low severity, because the limit is declared and still has to be confirmed.
 
 ## License
 

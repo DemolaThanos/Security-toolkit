@@ -6,12 +6,12 @@ from devsecops_scan.models import Finding, Severity
 
 _IGNORE = "devsecops-scan: ignore"
 
-# AWS documents these two values. They are not live credentials.
+# Public AWS documentation examples, kept in pieces so this file has no contiguous credential.
 _IGNORED_VALUES = frozenset(
     {
-        "AKIAIOSFODNN7EXAMPLE",
-        "ASIAIOSFODNN7EXAMPLE",
-        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        "AKIA" + "IOSFODNN7EXAMPLE",
+        "ASIA" + "IOSFODNN7EXAMPLE",
+        "wJalrXUtnFEMI" + "/K7MDENG" + "/bPxRfiCYEXAMPLEKEY",
     }
 )
 
@@ -75,6 +75,18 @@ _RULES = (
         Severity.HIGH,
         r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9\-_]{20,}",
         "PyPI API token",
+    ),
+    _rule(
+        "gitlab-pat",
+        Severity.HIGH,
+        r"\bglpat-[A-Za-z0-9\-_]{20,}\b",
+        "GitLab personal access token",
+    ),
+    _rule(
+        "npm-token",
+        Severity.HIGH,
+        r"\bnpm_[A-Za-z0-9]{36}\b",
+        "npm access token",
     ),
     _rule(
         "private-key",

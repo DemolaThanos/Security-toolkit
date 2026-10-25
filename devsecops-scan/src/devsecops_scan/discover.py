@@ -23,6 +23,10 @@ SKIP_DIRS = frozenset(
         "dist",
         "node_modules",
         "site-packages",
+        ".eggs",
+        ".nox",
+        ".tox",
+        "htmlcov",
         "vendor",
         "venv",
     }
@@ -82,13 +86,17 @@ BINARY_SUFFIXES = frozenset(
 
 
 def iter_files(root: Path, *, exclude: tuple[str, ...]) -> Iterator[Path]:
-    """Yield files under root. Hidden files are included; hidden directories are not."""
+    """Yield files under root.
+
+    VCS metadata, dependency directories, and tool caches are skipped. Other hidden
+    directories, including ``.github``, are scanned.
+    """
     if root.is_file():
         if not _excluded(root.name, exclude):
             yield root
         return
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = [name for name in dirnames if name not in SKIP_DIRS and not name.startswith(".")]
+        dirnames[:] = [name for name in dirnames if name not in SKIP_DIRS]
         dirnames.sort()
         for name in sorted(filenames):
             path = Path(dirpath) / name

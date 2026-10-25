@@ -61,6 +61,8 @@ def lint_document(document: dict[str, Any], path: str) -> list[Finding]:
     findings: list[Finding] = []
     if kind == "Secret":
         findings.extend(_secret(document, path, kind, name, namespace))
+    elif kind == "ServiceAccount":
+        findings.extend(_service_account(document, path, name))
     elif kind in {"Role", "ClusterRole"}:
         findings.extend(_rbac_rules(document, path, kind, name))
     elif kind in {"RoleBinding", "ClusterRoleBinding"}:
@@ -206,7 +208,7 @@ def _workload(
             shown = image if isinstance(image, str) else "<missing>"
             add("image-unpinned", Severity.MEDIUM, f"{who} container {cname} image {shown} is not pinned", where)
         limits = _as_dict(_as_dict(container.get("resources")).get("limits"))
-        if "cpu" not in limits or "memory" not in limits:
+        if _limit_missing(limits, "cpu") or _limit_missing(limits, "memory"):
             add(
                 "resources-missing",
                 Severity.MEDIUM,
@@ -236,6 +238,20 @@ def _workload(
                     where,
                 )
     return findings
+
+
+def _service_account(document: dict[str, Any], path: str, name: str) -> list[Finding]:
+    if _as_bool(document.get("automountServiceAccountToken")) is False:
+        return []
+    return [
+        Finding(
+            "automount-token",
+            Severity.LOW,
+            f"ServiceAccount/{name} does not set automountServiceAccountToken to false",
+            path,
+            f"ServiceAccount/{name}",
+        )
+    ]
 
 
 def _secret(
@@ -405,6 +421,33 @@ def _sensitive_host_path(mounted: str) -> bool:
     if path == "/":
         return True
     return any(path == root or path.startswith(root + "/") for root in _SENSITIVE_ROOTS)
+
+
+def _limit_missing(limits: dict[str, Any], key: str) -> bool:
+    if key not in limits:
+        return True
+    return _zero_quantity(limits[key])
+
+
+def _zero_quantity(value: object) -> bool:
+    if isinstance(value, bool) or value is None:
+        return True
+    if isinstance(value, (int, float)):
+        return value <= 0
+    if not isinstance(value, str):
+        return True
+    number = ""
+    for char in value.strip():
+        if char.isdigit() or char == ".":
+            number += char
+            continue
+        break
+    if not number or number == ".":
+        return True
+    try:
+        return float(number) <= 0
+    except ValueError:
+        return True
 
 
 def _unpinned(image: str) -> bool:

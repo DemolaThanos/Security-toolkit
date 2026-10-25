@@ -56,9 +56,14 @@ def parse_model(text: str) -> Model:
     if len(text) > _MAX_TEXT:
         raise ModelError(["model is larger than 1000000 bytes"])
     try:
-        loaded = yaml.load(text, Loader=_BoundedLoader)
+        documents = list(yaml.load_all(text, Loader=_BoundedLoader))
     except yaml.YAMLError as exc:
         raise ModelError([f"model is not valid YAML: {exc}"]) from exc
+    while documents and documents[-1] is None:
+        documents.pop()
+    if len(documents) != 1:
+        raise ModelError(["model must be a single YAML document"])
+    loaded = documents[0]
     if not isinstance(loaded, dict):
         raise ModelError(["model must be a mapping"])
     problems: list[str] = []

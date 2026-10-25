@@ -2,19 +2,17 @@ from __future__ import annotations
 
 import http.client
 import ipaddress
-import logging
 import socket
 import ssl
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import SplitResult, urljoin, urlsplit
 
+from authrecon import __version__
 from authrecon.errors import ConnectError, PolicyError
-from authrecon.net import ResolvedHost, ensure_redirect, resolve_host
+from authrecon.net import ResolvedHost, ensure_redirect, host_key, resolve_host
 
-logger = logging.getLogger("authrecon.http")
-
-USER_AGENT = "authrecon/0.1.0"
+USER_AGENT = f"authrecon/{__version__}"
 _MAX_REDIRECTS = 5
 _MAX_URL = 2048
 
@@ -34,6 +32,7 @@ def fetch_headers(
     *,
     timeout: float,
     connector: Connector | None = None,
+    origin: ResolvedHost | None = None,
 ) -> HttpResult:
     _reject_credentials(url)
     if len(url) > _MAX_URL:
@@ -44,7 +43,21 @@ def fetch_headers(
     if parts.port is not None and not 1 <= parts.port <= 65535:
         raise PolicyError("URL port is out of range")
     origin_name = parts.hostname
-    origin = resolve_host(origin_name)
+    pins: dict[str, ResolvedHost] = {}
+    if origin is not None:
+        if host_key(origin.name) != host_key(origin_name):
+            raise PolicyError("resolved host does not match the URL")
+        pins[host_key(origin_name)] = origin
+
+    def pinned(hostname: str) -> ResolvedHost:
+        key = host_key(hostname)
+        found = pins.get(key)
+        if found is None:
+            found = resolve_host(hostname)
+            pins[key] = found
+        return found
+
+    origin_resolved = pinned(origin_name)
     current = url
     for hop in range(_MAX_REDIRECTS + 1):
         target = urlsplit(current)
@@ -52,12 +65,11 @@ def fetch_headers(
             raise PolicyError("redirect target is not an http(s) URL")
         if target.port is not None and not 1 <= target.port <= 65535:
             raise PolicyError("URL port is out of range")
-        reuse = hop == 0 and _same_host(origin_name, target.hostname)
-        resolved = origin if reuse else resolve_host(target.hostname)
+        if hop and not _same_host(origin_name, target.hostname):
+            raise PolicyError("refusing redirect to a different host")
+        resolved = pinned(target.hostname)
         if hop:
-            if not _same_host(origin_name, target.hostname):
-                raise PolicyError("refusing redirect to a different host")
-            ensure_redirect(origin.host_class, resolved)
+            ensure_redirect(origin_resolved.host_class, resolved)
         try:
             status, headers = _request(
                 target.scheme,
@@ -92,12 +104,8 @@ def _request(
 ) -> tuple[int, list[tuple[str, str]]]:
     resolved_port = port or (443 if scheme == "https" else 80)
     try:
-        if scheme == "https":
-            try:
-                return _once(scheme, resolved, resolved_port, path, timeout, True, connector)
-            except ssl.SSLCertVerificationError:
-                logger.info("TLS verification failed for %s", resolved.name)
-                return _once(scheme, resolved, resolved_port, path, timeout, False, connector)
+        # A certificate failure stays a failure. Header bytes from an unverified
+        # peer are not used, including for redirects.
         return _once(scheme, resolved, resolved_port, path, timeout, True, connector)
     except PolicyError:
         raise
@@ -131,7 +139,9 @@ def _once(
 
 
 def _open(scheme: str, resolved: ResolvedHost, port: int, timeout: float, verify: bool) -> http.client.HTTPConnection:
-    context = _tls_context(verify) if scheme == "https" else None
+    if scheme == "https" and not verify:
+        raise PolicyError("TLS verification cannot be disabled")
+    context = _tls_context() if scheme == "https" else None
     ssl_error: ssl.SSLError | None = None
     os_error: OSError | None = None
     for ip in resolved.addresses:
@@ -158,14 +168,8 @@ def _open(scheme: str, resolved: ResolvedHost, port: int, timeout: float, verify
     raise ConnectError(f"connection to {resolved.name}:{port} failed") from os_error
 
 
-def _tls_context(verify: bool) -> ssl.SSLContext:
-    if verify:
-        return ssl.create_default_context()
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    context.minimum_version = ssl.TLSVersion.TLSv1_2
-    return context
+def _tls_context() -> ssl.SSLContext:
+    return ssl.create_default_context()
 
 
 def _path(parts: SplitResult) -> str:

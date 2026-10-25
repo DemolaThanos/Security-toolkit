@@ -20,12 +20,22 @@ _KEYS = frozenset(
         "format",
         "max_bytes",
         "require_pins",
-        "s3_bucket",
-        "s3_key",
-        "s3_kms_key_id",
         "sast",
         "sca",
         "secrets",
+    }
+)
+
+# Destinations and credentials stay in the environment or on the CLI.
+_SINK_KEYS = frozenset(
+    {
+        "aws_role_arn",
+        "password",
+        "s3_bucket",
+        "s3_key",
+        "s3_kms_key_id",
+        "token",
+        "webhook_token",
         "webhook_url",
     }
 )
@@ -76,11 +86,17 @@ def resolve_settings(
     output: str | None,
     timeout: float,
     env: Mapping[str, str] | None = None,
+    ignore_config: bool = False,
 ) -> Settings:
     if not root.exists():
         raise ConfigError(f"path does not exist: {root}")
     environment = env if env is not None else os.environ
-    config_file = config_path or _default_config(root)
+    if ignore_config:
+        if config_path is not None:
+            raise ConfigError("--config cannot be combined with --no-config")
+        config_file = None
+    else:
+        config_file = config_path or _default_config(root)
     data: dict[str, object] = {}
     config_dir = root if root.is_dir() else root.parent
     if config_file is not None:
@@ -105,24 +121,18 @@ def resolve_settings(
         secrets=_flag(data.get("secrets"), True) and not no_secrets,
         sast=_flag(data.get("sast"), True) and not no_sast,
         sca=_flag(data.get("sca"), True) and not no_sca,
-        require_pins=_flag(data.get("require_pins"), False) if require_pins is None else require_pins,
-        advisories=_advisories(advisories, data.get("advisories"), config_dir),
+        require_pins=_flag(data.get("require_pins"), True) if require_pins is None else require_pins,
+        advisories=_advisories(advisories, data.get("advisories"), config_dir, root),
         dast_url=dast_url,
         dast_authorized=dast_authorized,
-        s3_bucket=_blank_to_none(
-            _pick_optional(s3_bucket, environment.get("DEVSECOPS_SCAN_S3_BUCKET"), data.get("s3_bucket"))
-        ),
-        s3_key=_blank_to_none(_pick_optional(s3_key, environment.get("DEVSECOPS_SCAN_S3_KEY"), data.get("s3_key"))),
+        # Bucket and webhook destinations use ambient credentials. A file in the
+        # tree is untrusted, so those values come only from the CLI or the environment.
+        s3_bucket=_blank_to_none(_pick_optional(s3_bucket, environment.get("DEVSECOPS_SCAN_S3_BUCKET"), None)),
+        s3_key=_blank_to_none(_pick_optional(s3_key, environment.get("DEVSECOPS_SCAN_S3_KEY"), None)),
         s3_kms_key_id=_blank_to_none(
-            _pick_optional(
-                s3_kms_key_id,
-                environment.get("DEVSECOPS_SCAN_S3_KMS_KEY_ID"),
-                data.get("s3_kms_key_id"),
-            )
+            _pick_optional(s3_kms_key_id, environment.get("DEVSECOPS_SCAN_S3_KMS_KEY_ID"), None)
         ),
-        webhook_url=_blank_to_none(
-            _pick_optional(webhook_url, environment.get("DEVSECOPS_SCAN_WEBHOOK_URL"), data.get("webhook_url"))
-        ),
+        webhook_url=_blank_to_none(_pick_optional(webhook_url, environment.get("DEVSECOPS_SCAN_WEBHOOK_URL"), None)),
         webhook_token=_blank_to_none(environment.get("DEVSECOPS_SCAN_WEBHOOK_TOKEN")),
         report_format=report_fmt,
         output=Path(output) if output else None,
@@ -138,6 +148,12 @@ def _default_config(root: Path) -> Path | None:
 
 def _load_toml(path: Path) -> dict[str, object]:
     try:
+        info = path.stat()
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
+    if info.st_size > 1_000_000:
+        raise ConfigError(f"{path} is larger than 1000000 bytes")
+    try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
@@ -147,6 +163,16 @@ def _load_toml(path: Path) -> dict[str, object]:
         loaded = tomllib.loads(raw)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
+    sinks = set(loaded) & _SINK_KEYS
+    if sinks:
+        names = ", ".join(sorted(sinks))
+        raise ConfigError(
+            f"credential sink in config ({names}); "
+            "use DEVSECOPS_SCAN_S3_BUCKET, DEVSECOPS_SCAN_S3_KEY, DEVSECOPS_SCAN_S3_KMS_KEY_ID, "
+            "DEVSECOPS_SCAN_WEBHOOK_URL, or the matching CLI flag. "
+            "The bearer token is only DEVSECOPS_SCAN_WEBHOOK_TOKEN. "
+            "An AWS role ARN belongs in the Actions secret AWS_ROLE_ARN"
+        )
     extra = set(loaded) - _KEYS
     if extra:
         names = ", ".join(sorted(extra))
@@ -164,7 +190,7 @@ def _excludes(configured: object, extra: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(values)
 
 
-def _advisories(cli: str | None, configured: object, config_dir: Path) -> Path | None:
+def _advisories(cli: str | None, configured: object, config_dir: Path, root: Path) -> Path | None:
     if cli:
         return Path(cli).expanduser()
     if configured is None:
@@ -174,7 +200,13 @@ def _advisories(cli: str | None, configured: object, config_dir: Path) -> Path |
     path = Path(configured).expanduser()
     if not path.is_absolute():
         path = config_dir / path
-    return path
+    scan_root = (root if root.is_dir() else root.parent).resolve()
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(scan_root)
+    except (OSError, ValueError) as exc:
+        raise ConfigError("advisories path must stay inside the scan root") from exc
+    return resolved
 
 
 def _pick_str(cli: str | None, configured: object, default: str, name: str) -> str:

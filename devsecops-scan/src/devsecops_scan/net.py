@@ -59,6 +59,18 @@ def ensure_redirect(origin: HostClass, dest: ResolvedHost) -> None:
         raise TargetError(f"refusing redirect from a public host to {dest.name}")
 
 
+def host_key(host: str) -> str:
+    """Stable identity so a later redirect to the same host reuses the first answer."""
+    name = host.strip().rstrip(".").lower()
+    literal = _parse_literal(name)
+    if literal is not None:
+        return str(_unwrap(literal))
+    try:
+        return name.encode("idna").decode("ascii")
+    except UnicodeError:
+        return name
+
+
 def open_http(
     scheme: str,
     resolved: ResolvedHost,
@@ -66,7 +78,9 @@ def open_http(
     timeout: float,
     verify: bool,
 ) -> http.client.HTTPConnection:
-    context = _tls_context(verify) if scheme == "https" else None
+    if scheme == "https" and not verify:
+        raise TargetError("TLS verification cannot be disabled")
+    context = _tls_context() if scheme == "https" else None
     ssl_error: ssl.SSLError | None = None
     os_error: OSError | None = None
     for ip in resolved.addresses:
@@ -110,14 +124,8 @@ class PinnedHTTPSConnection(http.client.HTTPSConnection):
             raise
 
 
-def _tls_context(verify: bool) -> ssl.SSLContext:
-    if verify:
-        return ssl.create_default_context()
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    context.minimum_version = ssl.TLSVersion.TLSv1_2
-    return context
+def _tls_context() -> ssl.SSLContext:
+    return ssl.create_default_context()
 
 
 def _lookup(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:

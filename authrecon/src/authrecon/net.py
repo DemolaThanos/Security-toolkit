@@ -57,6 +57,18 @@ def ensure_redirect(origin: HostClass, dest: ResolvedHost) -> None:
         raise PolicyError(f"refusing redirect from a public host to {dest.name}")
 
 
+def host_key(host: str) -> str:
+    """Stable identity so a later request to the same host reuses the first answer."""
+    name = host.strip().rstrip(".").lower()
+    literal = _parse_literal(name)
+    if literal is not None:
+        return str(_unwrap(literal))
+    try:
+        return name.encode("idna").decode("ascii")
+    except UnicodeError:
+        return name
+
+
 def connect_pinned(addresses: tuple[str, ...], port: int, timeout: float) -> socket.socket:
     last: OSError | None = None
     for ip in addresses:

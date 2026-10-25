@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from urllib.parse import quote
 
 from devsecops_scan import __version__
-from devsecops_scan.models import ScanReport, Severity
+from devsecops_scan.models import Finding, ScanReport, Severity
 
 _SARIF_LEVEL = {
     Severity.CRITICAL: "error",
@@ -28,20 +29,22 @@ def render(report: ScanReport, report_format: str) -> str:
 def _json_body(report: ScanReport) -> dict[str, object]:
     return {
         "files_scanned": report.files_scanned,
+        "files_skipped": report.files_skipped,
         "findings": [finding.to_dict() for finding in report.findings],
     }
 
 
 def _text(report: ScanReport) -> str:
+    skipped = f", {report.files_skipped} skipped" if report.files_skipped else ""
     if not report.findings:
-        return f"no findings in {report.files_scanned} files\n"
+        return f"no findings in {report.files_scanned} files{skipped}\n"
     lines = []
     for finding in report.findings:
         where = finding.path or "-"
         if finding.line is not None:
             where = f"{where}:{finding.line}"
         lines.append(f"{finding.severity.value}\t{finding.tool}\t{finding.rule_id}\t{where}\t{finding.message}")
-    lines.append(f"{len(report.findings)} findings in {report.files_scanned} files")
+    lines.append(f"{len(report.findings)} findings in {report.files_scanned} files{skipped}")
     return "\n".join(lines) + "\n"
 
 
@@ -64,6 +67,7 @@ def _sarif(report: ScanReport) -> dict[str, object]:
             "ruleId": finding.rule_id,
             "level": _SARIF_LEVEL[finding.severity],
             "message": {"text": finding.message},
+            "partialFingerprints": {"primaryLocationLineHash": _fingerprint(finding)},
         }
         if finding.path is not None:
             location: dict[str, object] = {
@@ -73,7 +77,8 @@ def _sarif(report: ScanReport) -> dict[str, object]:
             }
             if finding.line is not None:
                 physical = location["physicalLocation"]
-                assert isinstance(physical, dict)
+                if not isinstance(physical, dict):
+                    raise RuntimeError("SARIF location was not an object")
                 physical["region"] = {"startLine": finding.line}
             result["locations"] = [location]
         results.append(result)
@@ -91,10 +96,15 @@ def _sarif(report: ScanReport) -> dict[str, object]:
                     }
                 },
                 "results": results,
-                "properties": {"filesScanned": report.files_scanned},
+                "properties": {"filesScanned": report.files_scanned, "filesSkipped": report.files_skipped},
             }
         ],
     }
+
+
+def _fingerprint(finding: Finding) -> str:
+    raw = f"{finding.rule_id}\n{finding.path or ''}\n{finding.line or 0}\n{finding.message}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _score(severity: Severity) -> str:

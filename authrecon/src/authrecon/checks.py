@@ -151,6 +151,14 @@ def _cookies(grouped: dict[str, list[str]], scheme: str, findings: list[Finding]
         name = _snippet(name, 80) or "<cookie>"
         if scheme == "https" and "secure" not in flags:
             findings.append(Finding("cookie-secure", Severity.HIGH, f"cookie {name} is missing Secure"))
+        if name.startswith("__Host-") and ("secure" not in flags or attrs.get("path") != "/" or "domain" in flags):
+            findings.append(
+                Finding(
+                    "cookie-host-prefix",
+                    Severity.HIGH,
+                    f"cookie {name} uses the __Host- prefix without Secure, Path=/, and no Domain",
+                )
+            )
         if "httponly" not in flags:
             findings.append(Finding("cookie-httponly", Severity.MEDIUM, f"cookie {name} is missing HttpOnly"))
         samesite = attrs.get("samesite", "").lower()

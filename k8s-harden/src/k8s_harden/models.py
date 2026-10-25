@@ -55,6 +55,7 @@ class Finding:
 class LintReport:
     findings: tuple[Finding, ...]
     errors: tuple[str, ...]
+    files_checked: int = 0
 
     def failing(self, threshold: Severity) -> tuple[Finding, ...]:
         return tuple(item for item in self.findings if meets_threshold(item.severity, threshold))

@@ -116,6 +116,43 @@ def test_reintroduced_and_last_affected_ranges() -> None:
     assert not flagged("2.1.0")
 
 
+def test_cvss_v3_score_is_used_when_the_feed_has_no_label() -> None:
+    record = {
+        "id": "OSV-1",
+        "summary": "remote code execution",
+        "severity": [
+            {"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"},
+        ],
+        "affected": [
+            {
+                "package": {"ecosystem": "PyPI", "name": "demo"},
+                "versions": ["1.0.0"],
+            }
+        ],
+    }
+    loaded = load_advisories_from(record)
+    assert loaded[0].severity is Severity.CRITICAL
+    medium = {
+        "id": "OSV-2",
+        "summary": "info leak",
+        "severity": [{"type": "CVSS_V3", "score": "7.5"}],
+        "affected": [{"package": {"ecosystem": "PyPI", "name": "demo"}, "versions": ["1.0.0"]}],
+    }
+    assert load_advisories_from(medium)[0].severity is Severity.HIGH
+    unlabeled = {
+        "id": "OSV-3",
+        "summary": "unspecified",
+        "affected": [{"package": {"ecosystem": "PyPI", "name": "demo"}, "versions": ["1.0.0"]}],
+    }
+    assert load_advisories_from(unlabeled)[0].severity is Severity.HIGH
+
+
+def load_advisories_from(record: dict[str, object]) -> tuple[Advisory, ...]:
+    from devsecops_scan.sca import _advisory_from_osv
+
+    return tuple(_advisory_from_osv(record))
+
+
 def test_limit_event_is_exclusive() -> None:
     advisory = Advisory(
         id="TEST-2",

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stride-model"
-version = "0.1.0"
-description = "Generate a STRIDE threat review from a system model."
+dynamic = ["version"]
+description = "STRIDE review generator for a YAML system model."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -20,6 +20,9 @@ stride-model = "stride_model.cli:cli"
 
 [project.urls]
 Repository = "https://github.com/DemolaThanos/Security-toolkit"
+
+[tool.setuptools.dynamic]
+version = { attr = "stride_model.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -37,7 +40,10 @@ line-length = 120
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
 
 [tool.mypy]
 python_version = "3.11"

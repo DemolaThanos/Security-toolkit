@@ -48,12 +48,13 @@ def test_scan_skips_vendor_and_writes_sarif(tmp_path: Path) -> None:
     payload = json.loads(render(report, "sarif"))
     assert payload["version"] == "2.1.0"
     assert payload["runs"][0]["results"]
+    assert payload["runs"][0]["results"][0]["partialFingerprints"]["primaryLocationLineHash"]
 
 
 def test_config_precedence(tmp_path: Path) -> None:
     config = tmp_path / ".devsecops-scan.toml"
     config.write_text(
-        'fail_on = "low"\nexclude = ["skip-me/"]\ns3_bucket = "from-file"\nwebhook_url = "https://tracker.example/hook"\n',
+        'fail_on = "low"\nexclude = ["skip-me/"]\n',
         encoding="utf-8",
     )
     settings = resolve_settings(
@@ -76,19 +77,23 @@ def test_config_precedence(tmp_path: Path) -> None:
         report_format=None,
         output=None,
         timeout=5,
-        env={"DEVSECOPS_SCAN_S3_BUCKET": "from-env", "DEVSECOPS_SCAN_WEBHOOK_TOKEN": "sekret"},
+        env={
+            "DEVSECOPS_SCAN_S3_BUCKET": "from-env",
+            "DEVSECOPS_SCAN_WEBHOOK_URL": "https://tracker.example/hook",
+            "DEVSECOPS_SCAN_WEBHOOK_TOKEN": "${WEBHOOK_TOKEN}",
+        },
     )
     assert settings.fail_on.value == "high"
     assert settings.exclude == ("skip-me/", "also/")
     assert settings.secrets is False
     assert settings.s3_bucket == "from-env"
     assert settings.webhook_url == "https://tracker.example/hook"
-    assert settings.webhook_token == "sekret"
+    assert settings.webhook_token == "${WEBHOOK_TOKEN}"
 
 
 def test_unknown_config_key(tmp_path: Path) -> None:
     config = tmp_path / "scan.toml"
-    config.write_text('webhook_token = "nope"\n', encoding="utf-8")
+    config.write_text("extra = 1\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="unknown config keys"):
         resolve_settings(
             root=tmp_path,
@@ -147,7 +152,8 @@ def test_missing_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_webhook_scrubs_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    token = "super-secret-token"
+    token = "${WEBHOOK_TOKEN}"
+    query = "trace=redacted-query"
 
     def fake_dns(host: str, *args: object, **kwargs: object) -> list[tuple[object, ...]]:
         del host, args, kwargs
@@ -160,10 +166,10 @@ def test_webhook_scrubs_token(monkeypatch: pytest.MonkeyPatch) -> None:
         raise OSError(f"boom {token} {getattr(request, 'full_url', '')}")
 
     with pytest.raises(PublishError) as caught:
-        post_webhook(b"{}", "https://tracker.example/hook?token=abc", token, 1, opener)
+        post_webhook(b"{}", f"https://tracker.example/hook?{query}", token, 1, opener)
     message = str(caught.value)
     assert token not in message
-    assert "abc" not in message
+    assert "redacted-query" not in message
     assert "tracker.example" in message
     with pytest.raises(PublishError, match="not following"):
         refuse_redirect(302)
@@ -288,6 +294,58 @@ def test_publish_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert main(["publish", str(report), "--s3-bucket", "audit", "--s3-key", "reports/a.sarif"]) == 0
     assert seen == {"body": b"{}", "bucket": "audit", "key": "reports/a.sarif", "kms": None}
     assert main(["publish", str(tmp_path / "missing.sarif"), "--s3-bucket", "audit"]) == 2
+
+
+def test_hidden_workflow_is_scanned_and_git_is_not(tmp_path: Path) -> None:
+    token = "ghp_" + ("a" * 36)
+    git = tmp_path / ".git"
+    git.mkdir()
+    (git / "config").write_text(f"token = {token}\n", encoding="utf-8")
+    workflow = tmp_path / ".github" / "workflows"
+    workflow.mkdir(parents=True)
+    (workflow / "ci.yml").write_text(f"token: {token}\n", encoding="utf-8")
+    report = run_scan(_settings(tmp_path))
+    paths = {item.path for item in report.findings if item.rule_id == "github-token"}
+    assert paths == {".github/workflows/ci.yml"}
+
+
+def test_no_config_keeps_a_committed_file_from_silencing_the_scan(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("eval(user_input)\n", encoding="utf-8")
+    (tmp_path / ".devsecops-scan.toml").write_text(
+        "secrets = false\nsast = false\nsca = false\n",
+        encoding="utf-8",
+    )
+    assert main(["scan", str(tmp_path), "--fail-on", "high"]) == 0
+    assert main(["scan", str(tmp_path), "--no-config", "--fail-on", "high"]) == 1
+    assert main(["scan", str(tmp_path), "--no-config", "--config", "other.toml"]) == 2
+
+
+def test_unreadable_tree_exits_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert main(["scan", str(empty)]) == 2
+    assert "no files were scanned" in capsys.readouterr().err
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / ".devsecops-scan.toml").write_text("max_bytes = 1\n", encoding="utf-8")
+    assert main(["scan", str(tmp_path)]) == 2
+    assert "larger than" in capsys.readouterr().err
+
+
+def test_config_rejects_credential_sinks_and_escaped_advisories(tmp_path: Path) -> None:
+    config = tmp_path / ".devsecops-scan.toml"
+    config.write_text(
+        'webhook_url = "https://tracker.example/hook"\ns3_bucket = "audit"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="credential sink") as caught:
+        _settings(tmp_path)
+    assert "webhook_url" in str(caught.value)
+    assert "s3_bucket" in str(caught.value)
+    assert "DEVSECOPS_SCAN_WEBHOOK_TOKEN" in str(caught.value)
+    outside = tmp_path.parent / "osv.json"
+    config.write_text(f'advisories = "{outside}"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="scan root"):
+        _settings(tmp_path)
 
 
 def test_dast_metadata_and_timeout_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

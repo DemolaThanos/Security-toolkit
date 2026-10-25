@@ -8,6 +8,7 @@ def test_python_and_js_rules() -> None:
             "eval(user_input)",
             "exec(user_input)",
             "subprocess.run(cmd, shell=True)",
+            "os.system(cmd)",
             "yaml.load(data)",
             "yaml.load(data, Loader=yaml.SafeLoader)",
             "yaml.safe_load(data)",
@@ -24,6 +25,7 @@ def test_python_and_js_rules() -> None:
     assert ids.count("python-eval") == 1
     assert "python-exec" in ids
     assert "subprocess-shell" in ids
+    assert "os-system" in ids
     assert "yaml-unsafe-load" in ids
     assert ids.count("yaml-unsafe-load") == 1
     assert "insecure-pickle" in ids
