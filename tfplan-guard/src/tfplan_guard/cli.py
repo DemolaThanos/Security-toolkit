@@ -8,6 +8,7 @@ from pathlib import Path
 from tfplan_guard import __version__
 from tfplan_guard.logsetup import configure_logging
 from tfplan_guard.models import parse_severity
+from tfplan_guard.paths import resolve_cli_path
 from tfplan_guard.report import render
 from tfplan_guard.scan import scan_path
 from tfplan_guard.suppress import ConfigError, load_suppressions
@@ -33,17 +34,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.command != "check":
             parser.print_help(sys.stderr)
             return 2
-        root = Path(args.path)
+        root = Path(_cli_path(args.path))
         if not root.exists():
-            raise LintError(f"path does not exist: {root}")
+            raise LintError(f"path does not exist: {args.path}")
         max_bytes = _DEFAULT_MAX_BYTES if args.max_bytes is None else args.max_bytes
         if max_bytes <= 0 or max_bytes > _MAX_BYTES_LIMIT:
             raise LintError(f"--max-bytes must be between 1 and {_MAX_BYTES_LIMIT}")
         suppressions = load_suppressions(Path(args.suppressions)) if args.suppressions else ()
+        destination = _cli_path(args.output) if args.output else None
         report = scan_path(root, max_bytes=max_bytes, suppressions=suppressions)
         body = render(report, args.format)
-        if args.output:
-            Path(args.output).write_text(body, encoding="utf-8")
+        if destination:
+            Path(destination).write_text(body, encoding="utf-8")
         else:
             sys.stdout.write(body)
         if report.files_checked == 0 and not report.errors:
@@ -68,6 +70,13 @@ def main(argv: list[str] | None = None) -> int:
             raise
         print(f"tfplan-guard: {exc}", file=sys.stderr)
         return 2
+
+
+def _cli_path(raw: str) -> str:
+    try:
+        return resolve_cli_path(raw)
+    except ValueError as exc:
+        raise LintError(str(exc)) from exc
 
 
 def _log_format() -> str:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from dataclasses import dataclass
@@ -7,10 +8,13 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 from tfplan_guard.models import Finding, Resource
+from tfplan_guard.paths import resolve_cli_path
 from tfplan_guard.rules import RULE_INDEX
 from tfplan_guard.values import lookup
 
 _MIN_JUSTIFICATION = 12
+_MAX_ADDRESS = 1_024
+MAX_SUPPRESSION_BYTES = 1_000_000
 _TAG = "tfplan-guard/ignore"
 _TAG_PREFIX = "tfplan-guard/ignore:"
 _PLACEHOLDER = re.compile(r"(?i)^(todo|fixme|later|wip|n/?a|none|ignore|false|tbd|xxx+|test|ok|no)$")
@@ -27,12 +31,24 @@ class Suppression:
     rule: str
     address: str
     justification: str
+    literal: bool = False
 
 
 def load_suppressions(path: Path) -> tuple[Suppression, ...]:
     display = path.as_posix()
     try:
-        text = path.read_text(encoding="utf-8")
+        opened = resolve_cli_path(os.fspath(path))
+    except (OSError, ValueError) as exc:
+        raise ConfigError([str(exc)]) from exc
+    file_path = Path(opened)
+    try:
+        size = file_path.stat().st_size
+    except OSError as exc:
+        raise ConfigError([f"cannot read {display}: {exc}"]) from exc
+    if size > MAX_SUPPRESSION_BYTES:
+        raise ConfigError([f"{display} is larger than {MAX_SUPPRESSION_BYTES} bytes"])
+    try:
+        text = file_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise ConfigError([f"cannot read {display}: {exc}"]) from exc
     try:
@@ -86,12 +102,15 @@ def inline_suppressions(resources: list[Resource]) -> tuple[tuple[Suppression, .
             if reason:
                 errors.append(f"{where} {reason}")
                 continue
-            found.append(Suppression(rule_id, resource.address, value.strip()))
+            found.append(Suppression(rule_id, resource.address, value.strip(), literal=True))
     return tuple(found), tuple(errors)
 
 
 def suppressed(finding: Finding, items: tuple[Suppression, ...]) -> bool:
-    return any(item.rule in {finding.rule_id, "*"} and _address_match(finding.address, item.address) for item in items)
+    return any(
+        item.rule in {finding.rule_id, "*"} and _address_match(finding.address, item.address, literal=item.literal)
+        for item in items
+    )
 
 
 def justification_error(text: str) -> str | None:
@@ -114,6 +133,9 @@ def _entry(where: str, entry: object) -> tuple[Suppression | None, str | None]:
     if not isinstance(address, str) or not address.strip():
         return None, f"{where} is missing address"
     rule_id = rule.strip()
+    address_text = address.strip()
+    if len(address_text) > _MAX_ADDRESS:
+        return None, f"{where} address is too long"
     if rule_id != "*" and rule_id not in RULE_INDEX:
         return None, f"{where} uses unknown rule {rule_id!r}"
     if not isinstance(justification, str):
@@ -121,7 +143,7 @@ def _entry(where: str, entry: object) -> tuple[Suppression | None, str | None]:
     reason = justification_error(justification)
     if reason:
         return None, f"{where} {reason}"
-    return Suppression(rule_id, address.strip(), justification.strip()), None
+    return Suppression(rule_id, address_text, justification.strip()), None
 
 
 def _tags(resource: Resource) -> dict[str, object]:
@@ -136,7 +158,11 @@ def _tags(resource: Resource) -> dict[str, object]:
     return merged
 
 
-def _address_match(address: str, pattern: str) -> bool:
-    if any(char in pattern for char in "*?["):
-        return fnmatch(address, pattern)
-    return address == pattern
+def _address_match(address: str, pattern: str, *, literal: bool) -> bool:
+    # Inline tags come from the plan, so they match one address.
+    # In a file, only * and ? are wildcards. Brackets stay literal so
+    # aws_instance.web[0] does not also match aws_instance.web0.
+    if literal or ("*" not in pattern and "?" not in pattern):
+        return address == pattern
+    escaped = "".join("[[]" if char == "[" else char for char in pattern)
+    return fnmatch(address, escaped)

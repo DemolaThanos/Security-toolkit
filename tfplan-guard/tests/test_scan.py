@@ -540,6 +540,186 @@ def test_symlink_and_file_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert "more than" in report.errors[0]
 
 
+def test_counted_address_suppression_is_literal(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = _write(
+        tmp_path,
+        _plan(
+            [
+                _res(
+                    'aws_ebs_volume.data["*"]',
+                    "aws_ebs_volume",
+                    {
+                        "encrypted": False,
+                        "tags": {
+                            "tfplan-guard/ignore:aws-ebs-unencrypted": ("Ephemeral cache volume rebuilt every hour.")
+                        },
+                    },
+                ),
+                _res(
+                    "aws_ebs_volume.data[0]",
+                    "aws_ebs_volume",
+                    {
+                        "encrypted": False,
+                        "tags": {
+                            "tfplan-guard/ignore:aws-ebs-unencrypted": (
+                                "Scratch disk for the image build and nothing else."
+                            )
+                        },
+                    },
+                ),
+                _res("aws_ebs_volume.data0", "aws_ebs_volume", {"encrypted": False}),
+                _res("aws_ebs_volume.other", "aws_ebs_volume", {"encrypted": False}),
+            ]
+        ),
+    )
+    report = scan_path(path, max_bytes=MAX_BYTES, suppressions=())
+    assert report.errors == ()
+    assert {item.address for item in report.findings} == {"aws_ebs_volume.data0", "aws_ebs_volume.other"}
+
+    sup = tmp_path / "suppress.toml"
+    sup.write_text(
+        """
+[[suppress]]
+rule = "aws-ebs-unencrypted"
+address = "aws_ebs_volume.data[0]"
+justification = "This index is the scratch disk and holds no data."
+""",
+        encoding="utf-8",
+    )
+    assert main(["check", str(path), "--suppressions", str(sup), "--fail-on", "low"]) == 1
+    text = capsys.readouterr().out
+    assert "aws_ebs_volume.data[0]" not in text
+    assert "aws_ebs_volume.data0" in text
+
+    sup.write_text(
+        f"""
+[[suppress]]
+rule = "*"
+address = "{"a" * 1200}"
+justification = "This address is far longer than a real resource."
+""",
+        encoding="utf-8",
+    )
+    assert main(["check", str(path), "--suppressions", str(sup)]) == 2
+    assert "too long" in capsys.readouterr().err
+
+
+def test_relative_path_cannot_leave_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    _write(work, _plan([_res("aws_ebs_volume.plain", "aws_ebs_volume", {"encrypted": False})]))
+    assert main(["check", "plan.json", "--format", "sarif", "--output", "out.sarif", "--fail-on", "low"]) == 1
+    sarif = json.loads((work / "out.sarif").read_text(encoding="utf-8"))
+    uri = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    assert uri == "plan.json"
+    capsys.readouterr()
+
+    outside = tmp_path / "outside.json"
+    outside.write_text((work / "plan.json").read_text(encoding="utf-8"), encoding="utf-8")
+    assert main(["check", "../outside.json"]) == 2
+    assert "working directory" in capsys.readouterr().err
+    link = work / "linked.json"
+    link.symlink_to(outside)
+    assert main(["check", "linked.json"]) == 2
+    assert main(["check", "plan.json", "--output", "../out.sarif", "--format", "sarif"]) == 2
+    assert not (tmp_path / "out.sarif").exists()
+    assert main(["check", "plan.json", "--suppressions", "../suppress.toml"]) == 2
+    assert main(["check", "plan.json\x00"]) == 2
+
+
+def test_cluster_instance_string_ports_and_bad_policy(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        _plan(
+            [
+                _res("aws_rds_cluster_instance.pub", "aws_rds_cluster_instance", {"publicly_accessible": True}),
+                _res(
+                    "aws_security_group.strings",
+                    "aws_security_group",
+                    {
+                        "ingress": [
+                            {"protocol": "tcp", "from_port": "22", "to_port": "22", "cidr_blocks": ["0.0.0.0/0"]}
+                        ]
+                    },
+                ),
+                _res("aws_iam_policy.bad", "aws_iam_policy", {"policy": "{not json"}),
+                _res("aws_ebs_volume.plain", "aws_ebs_volume", {"encrypted": False}),
+            ]
+        ),
+    )
+    report = scan_path(path, max_bytes=MAX_BYTES, suppressions=())
+    found = {(item.address, item.rule_id) for item in report.findings}
+    assert ("aws_rds_cluster_instance.pub", "aws-rds-public") in found
+    assert ("aws_rds_cluster_instance.pub", "aws-rds-unencrypted") not in found
+    assert ("aws_security_group.strings", "aws-sg-world-sensitive-port") in found
+    assert ("aws_ebs_volume.plain", "aws-ebs-unencrypted") in found
+    assert any("not valid JSON" in error for error in report.errors)
+    assert main(["check", str(path), "--fail-on", "low"]) == 2
+
+
+def test_unknown_bucket_name_is_not_joined(tmp_path: Path) -> None:
+    pending = _res(
+        "aws_s3_bucket.pending",
+        "aws_s3_bucket",
+        {"bucket": None, "id": None},
+        unknown={"bucket": True, "id": True},
+    )
+    report = scan_path(_write(tmp_path, _plan([pending])), max_bytes=MAX_BYTES, suppressions=())
+    ids = {item.rule_id for item in report.findings}
+    assert "aws-s3-public-access-block" not in ids
+    assert "aws-s3-unencrypted" in ids
+
+    linked = _res(
+        "aws_s3_bucket_server_side_encryption_configuration.pending",
+        "aws_s3_bucket_server_side_encryption_configuration",
+        {
+            "bucket": None,
+            "rule": [{"apply_server_side_encryption_by_default": [{"sse_algorithm": "AES256"}]}],
+        },
+        unknown={"bucket": True},
+    )
+    report = scan_path(
+        _write(tmp_path, _plan([pending, linked]), name="linked.json"),
+        max_bytes=MAX_BYTES,
+        suppressions=(),
+    )
+    assert "aws-s3-unencrypted" not in {item.rule_id for item in report.findings}
+
+
+def test_nested_documents_are_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    nested = '{"a":' * 2000 + "null" + "}" * 2000
+    path = tmp_path / "deep.json"
+    path.write_text(nested, encoding="utf-8")
+    report = scan_path(path, max_bytes=MAX_BYTES, suppressions=())
+    assert report.findings == ()
+    assert any("nested" in error for error in report.errors)
+
+    module: dict[str, Any] = {"resources": []}
+    for _ in range(60):
+        module = {"resources": [], "child_modules": [module]}
+    state = {"format_version": "1.0", "values": {"root_module": module}}
+    report = scan_path(_write(tmp_path, state, name="state.json"), max_bytes=MAX_BYTES, suppressions=())
+    assert any("nesting" in error for error in report.errors)
+
+    import tfplan_guard.suppress as suppress_mod
+
+    monkeypatch.setattr(suppress_mod, "MAX_SUPPRESSION_BYTES", 32)
+    sup = tmp_path / "suppress.toml"
+    sup.write_bytes(b"x" * 200)
+    plain = _write(
+        tmp_path,
+        _plan([_res("aws_ebs_volume.plain", "aws_ebs_volume", {"encrypted": True})]),
+        name="plain.json",
+    )
+    assert main(["check", str(plain), "--suppressions", str(sup)]) == 2
+    assert "larger than" in capsys.readouterr().err
+
+
 def test_bad_log_format_and_max_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = _write(tmp_path, _plan([]))
     monkeypatch.setenv("TFPLAN_GUARD_LOG_FORMAT", "xml")

@@ -24,3 +24,7 @@ updates:
     directory: /tfplan-guard
     schedule:
       interval: weekly
+  - package-ecosystem: uv
+    directory: /tfplan-guard
+    schedule:
+      interval: weekly

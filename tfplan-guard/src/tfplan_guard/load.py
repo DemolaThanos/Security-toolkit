@@ -8,11 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from tfplan_guard.models import Resource
+from tfplan_guard.paths import contained
 
 logger = logging.getLogger("tfplan_guard.load")
 
 _SKIP_DIRS = frozenset({".git", ".hg", ".svn", "node_modules", "vendor", "__pycache__", ".tox", ".nox"})
 MAX_FILES = 1_000
+_MAX_MODULE_DEPTH = 50
 
 
 def terraform_files(root: Path) -> tuple[list[Path], bool]:
@@ -37,9 +39,16 @@ def terraform_files(root: Path) -> tuple[list[Path], bool]:
 
 
 def display_path(root: Path, path: Path) -> str:
-    if root.is_file():
+    """Path shown in a report. Prefer a path relative to the working directory."""
+    target = path if root.is_dir() else root
+    try:
+        relative = target.resolve().relative_to(Path.cwd().resolve())
+    except (OSError, ValueError):
+        if root.is_dir():
+            return path.relative_to(root).as_posix()
         return root.as_posix()
-    return path.relative_to(root).as_posix()
+    text = relative.as_posix()
+    return "." if text == "" else text
 
 
 def load_document(
@@ -48,15 +57,18 @@ def load_document(
     *,
     max_bytes: int,
     strict: bool,
+    root: Path,
 ) -> tuple[list[Resource] | None, str | None]:
     """Return resources, or (None, None) when a directory entry is not a plan."""
-    text, error = _read(path, display, max_bytes)
+    text, error = _read(path, display, max_bytes, root)
     if error or text is None:
         return None, error
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
         return None, f"{display} is not valid JSON: {exc}"
+    except RecursionError:
+        return None, f"{display} is too deeply nested"
     if not isinstance(payload, dict):
         if strict:
             return None, f"{display} is not a Terraform plan or state"
@@ -74,15 +86,20 @@ def load_document(
     return resources, None
 
 
-def _read(path: Path, display: str, max_bytes: int) -> tuple[str | None, str | None]:
+def _read(path: Path, display: str, max_bytes: int, root: Path) -> tuple[str | None, str | None]:
     try:
-        size = path.stat().st_size
+        opened = contained(os.fspath(path), os.fspath(root))
+    except (OSError, ValueError) as exc:
+        return None, f"refusing to read {display}: {exc}"
+    file_path = Path(opened)
+    try:
+        size = file_path.stat().st_size
     except OSError as exc:
         return None, f"cannot stat {display}: {exc}"
     if size > max_bytes:
         return None, f"{display} is larger than {max_bytes} bytes"
     try:
-        text = path.read_text(encoding="utf-8")
+        text = file_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         return None, f"cannot read {display}: {exc}"
     if text.startswith("\ufeff"):
@@ -131,7 +148,9 @@ def _from_change(item: dict[str, Any], text: str, display: str) -> Resource | No
     return _resource(item, after, _unknown(change.get("after_unknown")), text, display)
 
 
-def _from_module(module: dict[str, Any], text: str, display: str, into: list[Resource]) -> None:
+def _from_module(module: dict[str, Any], text: str, display: str, into: list[Resource], depth: int = 0) -> None:
+    if depth > _MAX_MODULE_DEPTH:
+        raise ValueError(f"module nesting exceeds {_MAX_MODULE_DEPTH}")
     raw = module.get("resources")
     if isinstance(raw, list):
         for item in raw:
@@ -144,7 +163,7 @@ def _from_module(module: dict[str, Any], text: str, display: str, into: list[Res
     if isinstance(children, list):
         for child in children:
             if isinstance(child, dict):
-                _from_module(child, text, display, into)
+                _from_module(child, text, display, into, depth + 1)
 
 
 def _from_state(item: dict[str, Any], text: str, display: str) -> Resource | None:
@@ -205,16 +224,11 @@ def _line(text: str, address: str) -> int:
 
 def _contained_file(root: Path, path: Path) -> bool:
     try:
-        info = path.lstat()
-    except OSError:
+        opened = contained(os.fspath(path), os.fspath(root))
+    except (OSError, ValueError):
         return False
-    if stat.S_ISLNK(info.st_mode):
-        try:
-            path.resolve().relative_to(root.resolve())
-        except (OSError, ValueError):
-            return False
     try:
-        info = path.stat()
+        info = os.stat(opened)
     except OSError:
         return False
     return stat.S_ISREG(info.st_mode)

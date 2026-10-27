@@ -99,8 +99,15 @@ def as_int(value: object) -> int | None:
         return None
     if isinstance(value, int):
         return value
-    if isinstance(value, float) and value.is_integer():
+    if isinstance(value, float):
+        if not value.is_integer():
+            return None
         return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        digits = text[1:] if text.startswith(("+", "-")) else text
+        if digits.isdigit() and len(digits) <= 6:
+            return int(text)
     return None
 
 

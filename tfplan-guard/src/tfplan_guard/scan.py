@@ -25,7 +25,7 @@ def scan_path(root: Path, *, max_bytes: int, suppressions: tuple[Suppression, ..
     strict = root.is_file()
     for path in files:
         display = load_mod.display_path(root, path)
-        resources, error = load_mod.load_document(path, display, max_bytes=max_bytes, strict=strict)
+        resources, error = load_mod.load_document(path, display, max_bytes=max_bytes, strict=strict, root=root)
         if error:
             errors.append(error)
             continue
@@ -36,7 +36,9 @@ def scan_path(root: Path, *, max_bytes: int, suppressions: tuple[Suppression, ..
         errors.extend(inline_errors)
         active = suppressions + inline
         logger.info("checked %s resources in %s", len(resources), display)
-        for finding in evaluate(resources):
+        found, rule_errors = evaluate(resources)
+        errors.extend(rule_errors)
+        for finding in found:
             if suppressed(finding, active):
                 logger.info("suppressed %s on %s", finding.rule_id, finding.address)
                 continue

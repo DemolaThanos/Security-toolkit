@@ -24,7 +24,9 @@ tfplan-guard check state.json --suppressions tfplan-guard.toml
 
 `state.json` is `terraform show -json terraform.tfstate`. A directory of JSON files is scanned the same way. JSON that is not a plan or state is skipped when you pass a directory. A single file that is not a plan or state is an error.
 
-Exit codes: `0` nothing at or above the threshold, `1` findings, `2` a file could not be read, a suppression is invalid, or there was nothing to scan. The default threshold is `high`. `TFPLAN_GUARD_LOG_FORMAT=json` writes one JSON object per log line.
+Exit codes: `0` nothing at or above the threshold, `1` findings, `2` a file could not be read, a policy string is not a JSON object, a suppression is invalid, a relative path leaves the working directory, or there was nothing to scan. The default threshold is `high`. `TFPLAN_GUARD_LOG_FORMAT=json` writes one JSON object per log line.
+
+A relative path, including `--output` and `--suppressions`, has to stay inside the working directory after symlinks are resolved. An absolute path is used as given. Report paths are relative to the working directory when the file is inside it.
 
 `examples/secure.plan.json` stays quiet. `examples/insecure.plan.json` is the opposite, on purpose.
 
@@ -49,7 +51,7 @@ address = "aws_security_group.bastion"
 justification = "SSH is limited to the office CIDR published by the VPN module."
 ```
 
-`address` is a resource address or a glob (`module.legacy.*` or `*`). `rule` is a rule id or `*`. An unknown rule id is an error.
+`address` is a resource address or a glob (`module.legacy.*` or `*`). `*` and `?` are the only wildcards. Brackets are literal, so `aws_instance.web[0]` matches that instance and not `aws_instance.web0`. An inline tag matches that resource address only, even when the address contains `*` or `?`. `rule` is a rule id or `*`. An unknown rule id is an error.
 
 ## Rules
 
@@ -61,7 +63,7 @@ justification = "SSH is limited to the office CIDR published by the VPN module."
 | `aws-s3-unencrypted` | high | bucket with no SSE configuration using AES256 or aws:kms |
 | `aws-ebs-unencrypted` | high | `aws_ebs_volume`, instance or launch-configuration block device, or launch-template EBS mapping with `encrypted` not true |
 | `aws-rds-unencrypted` | high | `storage_encrypted` is not true on an RDS instance or cluster. Aurora instances are judged on the cluster |
-| `aws-rds-public` | high | `publicly_accessible` is true |
+| `aws-rds-public` | high | `publicly_accessible` is true on `aws_db_instance` or `aws_rds_cluster_instance` |
 | `aws-sg-world-all-ports` | critical | ingress from `0.0.0.0/0` or `::/0` for every port, or protocol `-1` |
 | `aws-sg-world-sensitive-port` | high | ingress from `0.0.0.0/0` or `::/0` that overlaps an admin or data port |
 | `aws-iam-wildcard-action` | critical when Resource is also `*`, otherwise high | Allow with Action `*` or NotAction |
@@ -109,7 +111,7 @@ Resolved values only. An attribute Terraform has not computed yet is skipped, no
 
 `delete` actions are ignored. A replacement (`delete` then `create`) is checked.
 
-S3 public access blocks and encryption configs are joined on the bucket name or id. When the bucket name is still unknown, a missing block is not reported, because the link cannot be proved. A bucket policy that has any Condition is not flagged, even when the condition does not restrict the principal.
+S3 public access blocks and encryption configs are joined on the bucket name or id. When the bucket name is still unknown, a missing public access block is not reported, because the link cannot be proved. Missing encryption is also not reported in that case when another encryption config in the file has a bucket value that is still unknown. A bucket policy that has any Condition is not flagged, even when the condition does not restrict the principal. A policy string that is not a JSON object fails the run.
 
 `Resource *` with a specific action is not flagged. ARN wildcards such as `arn:aws:s3:::*` are not treated as `*`. Trust policies (`assume_role_policy`) are not checked.
 

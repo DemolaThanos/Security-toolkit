@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
 from tfplan_guard.models import Finding, Resource, Rule, Severity
@@ -17,8 +16,6 @@ from tfplan_guard.values import (
     lookup,
     require_true,
 )
-
-logger = logging.getLogger("tfplan_guard.rules")
 
 # Admin and data-plane ports. 80 and 443 are left out on purpose.
 SENSITIVE_PORTS = frozenset(
@@ -69,8 +66,9 @@ _PUBLIC_ACL = {
     "public-read-write": Severity.CRITICAL,
     "authenticated-read": Severity.HIGH,
 }
-_ALL_USERS = "http://acs.amazonaws.com/groups/global/allusers"
-_AUTH_USERS = "http://acs.amazonaws.com/groups/global/authenticatedusers"
+# AllUsers and AuthenticatedUsers are identified by host and path.
+_ALL_USERS = "acs.amazonaws.com/groups/global/allusers"
+_AUTH_USERS = "acs.amazonaws.com/groups/global/authenticatedusers"
 # Automatic rotation is only supported for symmetric AWS_KMS keys.
 _NO_ROTATION_SPEC = frozenset(
     {
@@ -190,18 +188,19 @@ RULES: tuple[Rule, ...] = (
 RULE_INDEX = {rule.id: rule for rule in RULES}
 
 
-def evaluate(resources: list[Resource]) -> list[Finding]:
+def evaluate(resources: list[Resource]) -> tuple[list[Finding], list[str]]:
     findings: list[Finding] = []
-    findings.extend(_s3(resources))
+    errors: list[str] = []
+    findings.extend(_s3(resources, errors))
     for resource in resources:
         findings.extend(_ebs(resource))
         findings.extend(_rds(resource))
         findings.extend(_security_group(resource))
-        findings.extend(_iam(resource))
+        findings.extend(_iam(resource, errors))
         findings.extend(_cloudtrail(resource))
         findings.extend(_kms(resource))
         findings.extend(_imds(resource))
-    return findings
+    return findings, errors
 
 
 def _finding(rule_id: str, resource: Resource, message: str, severity: Severity | None = None) -> Finding:
@@ -217,7 +216,7 @@ def _finding(rule_id: str, resource: Resource, message: str, severity: Severity 
     )
 
 
-def _s3(resources: list[Resource]) -> list[Finding]:
+def _s3(resources: list[Resource], errors: list[str]) -> list[Finding]:
     findings: list[Finding] = []
     buckets = [item for item in resources if item.type == "aws_s3_bucket"]
     blocks, _blocks_unknown = _by_bucket(resources, "aws_s3_bucket_public_access_block")
@@ -225,7 +224,7 @@ def _s3(resources: list[Resource]) -> list[Finding]:
     for resource in resources:
         findings.extend(_acl(resource))
         if resource.type in {"aws_s3_bucket", "aws_s3_bucket_policy"}:
-            findings.extend(_bucket_policy(resource))
+            findings.extend(_bucket_policy(resource, errors))
     for bucket in buckets:
         findings.extend(_access_block(bucket, blocks))
         findings.extend(_bucket_encryption(bucket, encryption, encryption_unknown))
@@ -290,12 +289,20 @@ def _grant_exposure(resource: Resource) -> tuple[Severity | None, str]:
 
 
 def _uri_severity(uri: str) -> tuple[str | None, Severity | None]:
-    lowered = uri.strip().lower()
-    if lowered == _ALL_USERS:
+    hostpath = _hostpath(uri)
+    if hostpath == _ALL_USERS:
         return "AllUsers", Severity.CRITICAL
-    if lowered == _AUTH_USERS:
+    if hostpath == _AUTH_USERS:
         return "AuthenticatedUsers", Severity.HIGH
     return None, None
+
+
+def _hostpath(uri: str) -> str:
+    lowered = uri.strip().lower()
+    _scheme, separator, rest = lowered.partition("://")
+    if separator and rest:
+        return rest
+    return lowered
 
 
 def _worse(candidate: Severity, current: Severity) -> bool:
@@ -303,11 +310,14 @@ def _worse(candidate: Severity, current: Severity) -> bool:
     return rank.get(candidate, 0) > rank.get(current, 0)
 
 
-def _bucket_policy(resource: Resource) -> list[Finding]:
+def _bucket_policy(resource: Resource, errors: list[str]) -> list[Finding]:
     attr = lookup(resource, "policy")
     if not attr.known or attr.value in (None, ""):
         return []
-    document = _parse_policy(resource, attr.value)
+    document, error = _parse_policy(resource, attr.value)
+    if error:
+        errors.append(error)
+        return []
     if document is None:
         return []
     findings: list[Finding] = []
@@ -475,9 +485,11 @@ def _ebs(resource: Resource) -> list[Finding]:
 
 def _rds(resource: Resource) -> list[Finding]:
     findings: list[Finding] = []
+    if resource.type in {"aws_db_instance", "aws_rds_cluster_instance"} and explicitly_true(
+        lookup(resource, "publicly_accessible")
+    ):
+        findings.append(_finding("aws-rds-public", resource, "instance is publicly accessible"))
     if resource.type == "aws_db_instance":
-        if explicitly_true(lookup(resource, "publicly_accessible")):
-            findings.append(_finding("aws-rds-public", resource, "instance is publicly accessible"))
         engine = lookup(resource, "engine")
         # Aurora storage encryption is set on the cluster, not the instance.
         if not engine.known:
@@ -587,10 +599,13 @@ def _port_span(start: int | None, end: int | None) -> str:
     return f"{start}-{end}"
 
 
-def _iam(resource: Resource) -> list[Finding]:
+def _iam(resource: Resource, errors: list[str]) -> list[Finding]:
     findings: list[Finding] = []
     for label, raw in _policy_values(resource):
-        document = _parse_policy(resource, raw)
+        document, error = _parse_policy(resource, raw)
+        if error:
+            errors.append(error)
+            continue
         if document is None:
             continue
         for index, statement in enumerate(_statements(document)):
@@ -742,19 +757,20 @@ def _matches(index: dict[str, list[Resource]], names: set[str]) -> list[Resource
     return found
 
 
-def _parse_policy(resource: Resource, raw: object) -> dict[str, Any] | None:
+def _parse_policy(resource: Resource, raw: object) -> tuple[dict[str, Any] | None, str | None]:
     if isinstance(raw, dict):
-        return raw
+        return raw, None
     if not isinstance(raw, str):
-        return None
+        return None, f"{resource.address} policy is not a JSON object"
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("skipping unreadable policy on %s", resource.address)
-        return None
+    except json.JSONDecodeError as exc:
+        return None, f"{resource.address} policy is not valid JSON ({exc.msg})"
+    except RecursionError:
+        return None, f"{resource.address} policy is too deeply nested"
     if isinstance(parsed, dict):
-        return parsed
-    return None
+        return parsed, None
+    return None, f"{resource.address} policy is not a JSON object"
 
 
 def _statements(document: dict[str, Any]) -> list[dict[str, Any]]:
