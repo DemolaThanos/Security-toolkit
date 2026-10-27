@@ -20,3 +20,11 @@ updates:
     directory: /authrecon
     schedule:
       interval: weekly
+  - package-ecosystem: pip
+    directory: /tfplan-guard
+    schedule:
+      interval: weekly
+  - package-ecosystem: uv
+    directory: /tfplan-guard
+    schedule:
+      interval: weekly

@@ -1,0 +1,463 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "resource_changes": [
+    {
+      "address": "aws_s3_bucket.public",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "public",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "bucket": "public-bucket",
+          "id": "public-bucket",
+          "acl": "public-read"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_s3_bucket.auth",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "auth",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "bucket": "auth-bucket",
+          "id": "auth-bucket",
+          "acl": "authenticated-read"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_s3_bucket_public_access_block.auth",
+      "mode": "managed",
+      "type": "aws_s3_bucket_public_access_block",
+      "name": "auth",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "bucket": "auth-bucket",
+          "block_public_acls": true,
+          "block_public_policy": true,
+          "ignore_public_acls": true,
+          "restrict_public_buckets": true
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_s3_bucket_server_side_encryption_configuration.auth",
+      "mode": "managed",
+      "type": "aws_s3_bucket_server_side_encryption_configuration",
+      "name": "auth",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "bucket": "auth-bucket",
+          "rule": [
+            {
+              "apply_server_side_encryption_by_default": [
+                {
+                  "sse_algorithm": "aws:kms",
+                  "kms_master_key_id": ""
+                }
+              ],
+              "bucket_key_enabled": false
+            }
+          ]
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_s3_bucket_acl.grants",
+      "mode": "managed",
+      "type": "aws_s3_bucket_acl",
+      "name": "grants",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "bucket": "auth-bucket",
+          "access_control_policy": [
+            {
+              "grant": [
+                {
+                  "grantee": [
+                    {
+                      "type": "Group",
+                      "uri": "http://acs.amazonaws.com/groups/global/AllUsers"
+                    }
+                  ],
+                  "permission": "READ"
+                }
+              ],
+              "owner": [
+                {
+                  "id": "owner"
+                }
+              ]
+            }
+          ]
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_s3_bucket_policy.public",
+      "mode": "managed",
+      "type": "aws_s3_bucket_policy",
+      "name": "public",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "bucket": "public-bucket",
+          "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"PublicRead\",\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"s3:GetObject\",\"Resource\":\"arn:aws:s3:::public-bucket/*\"}]}"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_ebs_volume.plain",
+      "mode": "managed",
+      "type": "aws_ebs_volume",
+      "name": "plain",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "encrypted": false,
+          "size": 20,
+          "availability_zone": "us-east-1a"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_instance.open",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "open",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "ami": "ami-123",
+          "metadata_options": [
+            {
+              "http_endpoint": "enabled",
+              "http_tokens": "optional",
+              "http_put_response_hop_limit": 1
+            }
+          ],
+          "root_block_device": [
+            {
+              "encrypted": false,
+              "volume_size": 8
+            }
+          ]
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_launch_template.open",
+      "mode": "managed",
+      "type": "aws_launch_template",
+      "name": "open",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "name": "open",
+          "block_device_mappings": [
+            {
+              "device_name": "/dev/xvda",
+              "ebs": [
+                {
+                  "encrypted": false,
+                  "volume_size": 20
+                }
+              ]
+            }
+          ]
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_db_instance.open",
+      "mode": "managed",
+      "type": "aws_db_instance",
+      "name": "open",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "identifier": "open",
+          "engine": "mysql",
+          "storage_encrypted": false,
+          "publicly_accessible": true
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_rds_cluster.plain",
+      "mode": "managed",
+      "type": "aws_rds_cluster",
+      "name": "plain",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "cluster_identifier": "plain",
+          "engine": "aurora-mysql",
+          "storage_encrypted": false
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_security_group.open",
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "open",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "name": "open",
+          "ingress": [
+            {
+              "protocol": "tcp",
+              "from_port": 22,
+              "to_port": 22,
+              "cidr_blocks": [
+                "0.0.0.0/0"
+              ],
+              "ipv6_cidr_blocks": []
+            },
+            {
+              "protocol": "tcp",
+              "from_port": 3389,
+              "to_port": 3389,
+              "cidr_blocks": [],
+              "ipv6_cidr_blocks": [
+                "::/0"
+              ]
+            },
+            {
+              "protocol": "-1",
+              "from_port": 0,
+              "to_port": 0,
+              "cidr_blocks": [
+                "0.0.0.0/0"
+              ],
+              "ipv6_cidr_blocks": []
+            }
+          ],
+          "egress": [
+            {
+              "protocol": "-1",
+              "from_port": 0,
+              "to_port": 0,
+              "cidr_blocks": [
+                "0.0.0.0/0"
+              ],
+              "ipv6_cidr_blocks": [
+                "::/0"
+              ]
+            }
+          ]
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_security_group_rule.postgres",
+      "mode": "managed",
+      "type": "aws_security_group_rule",
+      "name": "postgres",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "type": "ingress",
+          "protocol": "tcp",
+          "from_port": 5432,
+          "to_port": 5432,
+          "cidr_blocks": [
+            "0.0.0.0/0"
+          ],
+          "security_group_id": "sg-open"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_vpc_security_group_ingress_rule.redis",
+      "mode": "managed",
+      "type": "aws_vpc_security_group_ingress_rule",
+      "name": "redis",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "security_group_id": "sg-open",
+          "ip_protocol": "tcp",
+          "from_port": 6379,
+          "to_port": 6379,
+          "cidr_ipv4": "0.0.0.0/0"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_iam_policy.admin",
+      "mode": "managed",
+      "type": "aws_iam_policy",
+      "name": "admin",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "name": "admin",
+          "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"Admin\",\"Effect\":\"Allow\",\"Action\":\"*\",\"Resource\":\"*\"}]}"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.star",
+      "mode": "managed",
+      "type": "aws_iam_role_policy",
+      "name": "star",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "name": "star",
+          "role": "app",
+          "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"*\"],\"Resource\":[\"arn:aws:s3:::public-bucket/*\"]}]}"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_iam_user_policy.wide",
+      "mode": "managed",
+      "type": "aws_iam_user_policy",
+      "name": "wide",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "name": "wide",
+          "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"s3:*\",\"Resource\":\"*\"}]}"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_cloudtrail.off",
+      "mode": "managed",
+      "type": "aws_cloudtrail",
+      "name": "off",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "name": "partial",
+          "enable_logging": false,
+          "is_multi_region_trail": false,
+          "s3_bucket_name": "public-bucket"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "aws_kms_key.plain",
+      "mode": "managed",
+      "type": "aws_kms_key",
+      "name": "plain",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "description": "plain",
+          "enable_key_rotation": false,
+          "customer_master_key_spec": "SYMMETRIC_DEFAULT",
+          "origin": "AWS_KMS"
+        },
+        "after_unknown": {}
+      }
+    }
+  ]
+}
