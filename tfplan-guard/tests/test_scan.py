@@ -615,12 +615,14 @@ def test_relative_path_cannot_leave_the_working_directory(
     sarif = json.loads((work / "out.sarif").read_text(encoding="utf-8"))
     uri = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
     assert uri == "plan.json"
+    assert main(["check", "./plan.json", "--fail-on", "low"]) == 1
     capsys.readouterr()
 
     outside = tmp_path / "outside.json"
     outside.write_text((work / "plan.json").read_text(encoding="utf-8"), encoding="utf-8")
     assert main(["check", "../outside.json"]) == 2
     assert "working directory" in capsys.readouterr().err
+    assert main(["check", "./../outside.json"]) == 2
     link = work / "linked.json"
     link.symlink_to(outside)
     assert main(["check", "linked.json"]) == 2

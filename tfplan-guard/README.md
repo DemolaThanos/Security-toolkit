@@ -24,9 +24,9 @@ tfplan-guard check state.json --suppressions tfplan-guard.toml
 
 `state.json` is `terraform show -json terraform.tfstate`. A directory of JSON files is scanned the same way. JSON that is not a plan or state is skipped when you pass a directory. A single file that is not a plan or state is an error.
 
-Exit codes: `0` nothing at or above the threshold, `1` findings, `2` a file could not be read, a policy string is not a JSON object, a suppression is invalid, a relative path leaves the working directory, or there was nothing to scan. The default threshold is `high`. `TFPLAN_GUARD_LOG_FORMAT=json` writes one JSON object per log line.
+Exit codes: `0` nothing at or above the threshold, `1` findings, `2` a file could not be read, a policy string is not a JSON object, a suppression is invalid, a path is rejected, or there was nothing to scan. The default threshold is `high`. `TFPLAN_GUARD_LOG_FORMAT=json` writes one JSON object per log line.
 
-A relative path, including `--output` and `--suppressions`, has to stay inside the working directory after symlinks are resolved. An absolute path is used as given. Report paths are relative to the working directory when the file is inside it.
+Paths use letters, digits, `._~-`, spaces, and slashes. A `..` segment is rejected. Relative paths, including `--output` and `--suppressions`, also have to stay inside the working directory after symlinks are resolved. An absolute path is used as given. Report paths are relative to the working directory when the file is inside it.
 
 `examples/secure.plan.json` stays quiet. `examples/insecure.plan.json` is the opposite, on purpose.
 
