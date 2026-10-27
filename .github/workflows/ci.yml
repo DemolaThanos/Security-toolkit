@@ -24,6 +24,7 @@ jobs:
           - k8s-harden
           - stride-model
           - authrecon
+          - tfplan-guard
         python-version:
           - "3.11"
           - "3.12"
