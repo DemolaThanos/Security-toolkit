@@ -13,9 +13,9 @@ authors = [{ name = "Ademola (Hammed) Gbadamosi" }]
 dependencies = ["packaging==26.3"]
 
 [project.optional-dependencies]
-s3 = ["boto3==1.43.118"]
+s3 = ["boto3==1.43.121"]
 dev = [
-  "boto3==1.43.118",
+  "boto3==1.43.121",
   "mypy==2.4.0",
   "pytest==9.1.1",
   "ruff==0.17.2",
