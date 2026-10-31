@@ -102,6 +102,18 @@ def test_read_host_list_accepts_a_bom_and_rejects_junk(tmp_path: Path) -> None:
         read_host_list(str(binary), limit=10)
 
 
+def test_cli_paths_cannot_leave_the_working_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SubtakeError, match="working directory"):
+        read_host_list("../hosts.txt", limit=10)
+    with pytest.raises(SubtakeError, match="unsupported characters"):
+        read_host_list("hosts\x00.txt", limit=10)
+    listed = tmp_path / "hosts.txt"
+    listed.write_text("www.example\n", encoding="utf-8")
+    assert read_host_list(str(listed), limit=10) == ("www.example",)
+    assert read_host_list("hosts.txt", limit=10) == ("www.example",)
+
+
 def test_example_host_file_parses() -> None:
     hosts = read_host_list(str(ROOT / "subtake" / "examples" / "hosts.txt"), limit=10)
     assert hosts == ("blog.example.com", "shop.example.com")

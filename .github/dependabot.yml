@@ -29,6 +29,10 @@ updates:
     schedule:
       interval: weekly
   - package-ecosystem: uv
+    directory: /subtake
+    schedule:
+      interval: weekly
+  - package-ecosystem: uv
     directory: /tfplan-guard
     schedule:
       interval: weekly

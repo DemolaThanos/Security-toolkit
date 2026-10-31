@@ -5,6 +5,7 @@ from pathlib import Path
 
 from subtake.errors import SubtakeError
 from subtake.net import normalize_hostname
+from subtake.paths import resolve_cli_path
 
 _MAX_BYTES = 1_000_000
 _MAX_HOSTS = 10_000
@@ -47,7 +48,7 @@ def _read(path: str) -> str:
     if path == "-":
         data = sys.stdin.buffer.read(_MAX_BYTES + 1)
     else:
-        file = Path(path)
+        file = Path(resolve_cli_path(path))
         try:
             info = file.stat()
         except OSError as exc:

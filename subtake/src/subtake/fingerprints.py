@@ -8,6 +8,7 @@ from pathlib import Path
 
 from subtake.errors import SubtakeError
 from subtake.models import Verdict
+from subtake.paths import resolve_cli_path
 
 _MAX_BYTES = 1_000_000
 _MAX_SERVICES = 200
@@ -86,7 +87,7 @@ def _read(path: str | None) -> str:
             return bundled.read_text(encoding="utf-8")
         except OSError as exc:
             raise SubtakeError("bundled fingerprints are missing") from exc
-    file = Path(path)
+    file = Path(resolve_cli_path(path))
     try:
         info = file.stat()
     except OSError as exc:

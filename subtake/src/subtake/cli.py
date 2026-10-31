@@ -13,6 +13,7 @@ from subtake.fingerprints import load_fingerprints
 from subtake.hosts import read_host_list
 from subtake.http_client import HttpProber
 from subtake.logsetup import configure_logging
+from subtake.paths import resolve_cli_path
 from subtake.report import render
 
 _DISCLAIMER = (
@@ -52,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         body = render(report, args.format)
         if args.output and args.output != "-":
-            Path(args.output).write_text(body, encoding="utf-8")
+            Path(resolve_cli_path(args.output)).write_text(body, encoding="utf-8")
         else:
             sys.stdout.write(body)
         return 1 if report.failing(args.fail_on) else 0

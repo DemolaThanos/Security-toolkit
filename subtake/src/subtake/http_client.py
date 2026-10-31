@@ -124,12 +124,12 @@ def _exchange(conn: http.client.HTTPConnection, host: str) -> HttpSnapshot:
     return HttpSnapshot(status, raw.decode("utf-8", "replace"), None)
 
 
-def _schemes(sni: str) -> tuple[str, ...]:
+def _schemes(sni: str) -> list[str]:
     try:
         ipaddress.ip_address(sni)
     except ValueError:
-        return ("https", "http")
-    return ("http",)
+        return ["https", "http"]
+    return ["http"]
 
 
 def _error_text(exc: Exception) -> str:
