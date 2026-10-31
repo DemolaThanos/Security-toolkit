@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools==75.3.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "subtake"
+dynamic = ["version"]
+description = "Authorised check for dangling CNAMEs that point at claimable third-party services."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Ademola (Hammed) Gbadamosi" }]
+dependencies = ["dnspython==2.9.1"]
+
+[project.optional-dependencies]
+dev = ["mypy==2.4.0", "pytest==9.1.1", "ruff==0.17.2"]
+
+[project.scripts]
+subtake = "subtake.cli:cli"
+
+[project.urls]
+Repository = "https://github.com/DemolaThanos/Security-toolkit"
+
+[tool.setuptools.dynamic]
+version = { attr = "subtake.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+subtake = ["py.typed", "data/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["subtake"]
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["dns", "dns.*"]
+ignore_missing_imports = true

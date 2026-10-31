@@ -24,6 +24,14 @@ updates:
     directory: /tfplan-guard
     schedule:
       interval: weekly
+  - package-ecosystem: pip
+    directory: /subtake
+    schedule:
+      interval: weekly
+  - package-ecosystem: uv
+    directory: /subtake
+    schedule:
+      interval: weekly
   - package-ecosystem: uv
     directory: /tfplan-guard
     schedule:

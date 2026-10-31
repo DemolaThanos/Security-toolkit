@@ -1,0 +1,298 @@
+{
+  "services": [
+    {
+      "id": "aws-cloudfront",
+      "service": "Amazon CloudFront",
+      "cname": ["*.cloudfront.net"],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "ViewerCertificateException", "verdict": "edge-case"}
+      ]
+    },
+    {
+      "id": "aws-elastic-beanstalk",
+      "service": "AWS Elastic Beanstalk",
+      "cname": ["*.elasticbeanstalk.com"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "aws-elb",
+      "service": "AWS Elastic Load Balancing",
+      "cname": ["*.elb.amazonaws.com", "*.elb.*.amazonaws.com"],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "aws-s3",
+      "service": "Amazon S3",
+      "cname": [
+        "*.s3.amazonaws.com",
+        "*.s3.*.amazonaws.com",
+        "*.s3-website.*.amazonaws.com",
+        "*.s3-website-*.amazonaws.com"
+      ],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "NoSuchBucket", "status": [404], "verdict": "likely-vulnerable"},
+        {"body": "The specified bucket does not exist", "status": [404], "verdict": "likely-vulnerable"}
+      ]
+    },
+    {
+      "id": "azure-api",
+      "service": "Azure API Management",
+      "cname": ["*.azure-api.net"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "azure-app-service",
+      "service": "Azure App Service",
+      "cname": ["*.azurewebsites.net"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "edge-case",
+      "http": [
+        {"body": "Web Site not found", "status": [404], "verdict": "likely-vulnerable"}
+      ]
+    },
+    {
+      "id": "azure-blob",
+      "service": "Azure Blob Storage",
+      "cname": ["*.blob.core.windows.net"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "The specified account does not exist", "status": [404], "verdict": "likely-vulnerable"},
+        {"body": "AccountNotFound", "status": [404], "verdict": "likely-vulnerable"}
+      ]
+    },
+    {
+      "id": "azure-cdn",
+      "service": "Azure CDN",
+      "cname": ["*.azureedge.net"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "azure-cloudapp",
+      "service": "Azure Cloud Services",
+      "cname": ["*.cloudapp.azure.com", "*.cloudapp.net"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "azure-front-door",
+      "service": "Azure Front Door",
+      "cname": ["*.azurefd.net"],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "azure-static-apps",
+      "service": "Azure Static Web Apps",
+      "cname": ["*.azurestaticapps.net"],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "azure-static-website",
+      "service": "Azure Storage static website",
+      "cname": ["*.web.core.windows.net"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "azure-traffic-manager",
+      "service": "Azure Traffic Manager",
+      "cname": ["*.trafficmanager.net"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "bitbucket-pages",
+      "service": "Bitbucket Pages",
+      "cname": ["*.bitbucket.io"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "Repository not found", "status": [404], "verdict": "likely-vulnerable"}
+      ]
+    },
+    {
+      "id": "fastly",
+      "service": "Fastly",
+      "cname": ["*.fastly.net"],
+      "nxdomain": "edge-case",
+      "on_miss": "edge-case",
+      "http": [
+        {"body": "Fastly error: unknown domain", "verdict": "edge-case"}
+      ]
+    },
+    {
+      "id": "firebase",
+      "service": "Firebase Hosting",
+      "cname": ["*.web.app", "*.firebaseapp.com"],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "Site Not Found", "status": [404], "verdict": "edge-case"}
+      ]
+    },
+    {
+      "id": "fly-io",
+      "service": "Fly.io",
+      "cname": ["*.fly.dev"],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "gcp-storage",
+      "service": "Google Cloud Storage",
+      "cname": ["c.storage.googleapis.com", "*.storage.googleapis.com"],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "NoSuchBucket", "status": [404], "verdict": "edge-case"},
+        {"body": "The specified bucket does not exist", "status": [404], "verdict": "edge-case"}
+      ]
+    },
+    {
+      "id": "ghost",
+      "service": "Ghost",
+      "cname": ["*.ghost.io"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "Failed to resolve DNS path for this host", "verdict": "likely-vulnerable"},
+        {"body": "no longer here, or never was", "verdict": "likely-vulnerable"}
+      ]
+    },
+    {
+      "id": "github-pages",
+      "service": "GitHub Pages",
+      "cname": ["*.github.io"],
+      "nxdomain": "edge-case",
+      "on_miss": "edge-case",
+      "http": [
+        {
+          "body": "There isn't a GitHub Pages site here",
+          "status": [404],
+          "verdict": "edge-case"
+        }
+      ]
+    },
+    {
+      "id": "helpscout",
+      "service": "Help Scout",
+      "cname": ["*.helpscoutdocs.com"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "edge-case",
+      "http": [
+        {"body": "No settings were found for this company", "verdict": "likely-vulnerable"}
+      ]
+    },
+    {
+      "id": "heroku",
+      "service": "Heroku",
+      "cname": ["*.herokuapp.com", "*.herokudns.com"],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "No such app", "status": [404], "verdict": "edge-case"},
+        {"body": "no-such-app", "status": [404], "verdict": "edge-case"}
+      ]
+    },
+    {
+      "id": "netlify",
+      "service": "Netlify",
+      "cname": ["*.netlify.app", "*.netlify.com"],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "Not Found - Request ID", "status": [404], "verdict": "edge-case"}
+      ]
+    },
+    {
+      "id": "pantheon",
+      "service": "Pantheon",
+      "cname": ["*.pantheonsite.io"],
+      "nxdomain": "edge-case",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "404 - Unknown site", "verdict": "edge-case"},
+        {"body": "do not know of the site which you seek", "verdict": "edge-case"}
+      ]
+    },
+    {
+      "id": "railway",
+      "service": "Railway",
+      "cname": ["*.up.railway.app"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": []
+    },
+    {
+      "id": "shopify",
+      "service": "Shopify",
+      "cname": ["*.myshopify.com"],
+      "nxdomain": "edge-case",
+      "on_miss": "edge-case",
+      "http": [
+        {"body": "Sorry, this shop is currently unavailable", "verdict": "edge-case"}
+      ]
+    },
+    {
+      "id": "surge",
+      "service": "Surge",
+      "cname": ["*.surge.sh"],
+      "nxdomain": "likely-vulnerable",
+      "on_miss": "not-vulnerable",
+      "http": [
+        {"body": "project not found", "status": [404], "verdict": "likely-vulnerable"}
+      ]
+    },
+    {
+      "id": "tumblr",
+      "service": "Tumblr",
+      "cname": ["domains.tumblr.com"],
+      "nxdomain": "edge-case",
+      "on_miss": "edge-case",
+      "http": [
+        {"body": "Whatever you were looking for doesn't currently exist at this address", "status": [404], "verdict": "edge-case"}
+      ]
+    },
+    {
+      "id": "vercel",
+      "service": "Vercel",
+      "cname": ["*.vercel.app", "cname.vercel-dns.com"],
+      "nxdomain": "edge-case",
+      "on_miss": "edge-case",
+      "http": [
+        {"body": "DEPLOYMENT_NOT_FOUND", "verdict": "edge-case"},
+        {"body": "The deployment could not be found", "verdict": "edge-case"}
+      ]
+    },
+    {
+      "id": "zendesk",
+      "service": "Zendesk",
+      "cname": ["*.zendesk.com"],
+      "nxdomain": "edge-case",
+      "on_miss": "edge-case",
+      "http": [
+        {"body": "Help Center Closed", "verdict": "edge-case"}
+      ]
+    }
+  ]
+}

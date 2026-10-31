@@ -8,6 +8,8 @@ stride-model is a STRIDE review generator for a YAML system model. It does not e
 
 tfplan-guard reads a Terraform plan or state JSON file you pass on the command line. It does not run Terraform, call AWS, or parse HCL.
 
+subtake reads hostnames you pass and checks them for dangling CNAMEs. It does not claim those names or brute-force labels. It refuses to run without `--i-am-authorized`, does not follow redirects, and will not connect to a non-public address.
+
 A report in a repository that is being scanned is untrusted input. Destinations and credentials are not stored in this repository. The reusable workflow and the composite action pass `--no-config`, so a committed `.devsecops-scan.toml` cannot turn checks off or choose a destination. devsecops-scan accepts destinations only from the environment or the command line:
 
 - `DEVSECOPS_SCAN_S3_BUCKET`, `DEVSECOPS_SCAN_S3_KEY`, `DEVSECOPS_SCAN_S3_KMS_KEY_ID` (or `--s3-bucket`, `--s3-key`, `--s3-kms-key-id`)

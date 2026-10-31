@@ -1,0 +1,3 @@
+# One hostname per line. These are documentation names, not a target list.
+blog.example.com
+shop.example.com

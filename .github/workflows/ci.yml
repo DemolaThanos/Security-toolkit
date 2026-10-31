@@ -25,6 +25,7 @@ jobs:
           - stride-model
           - authrecon
           - tfplan-guard
+          - subtake
         python-version:
           - "3.11"
           - "3.12"
