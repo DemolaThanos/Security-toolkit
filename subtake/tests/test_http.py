@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import socket
 import ssl
 
@@ -68,7 +69,7 @@ def test_opener_refuses_non_public_addresses(monkeypatch: pytest.MonkeyPatch) ->
         raise AssertionError(args)
 
     monkeypatch.setattr(socket, "create_connection", connect)
-    for ip in ("10.1.1.1", "169.254.169.254", "::ffff:169.254.169.254", "127.0.0.1"):
+    for ip in ("10.1.1.1", "169.254.169.254", "::ffff:169.254.169.254", "127.0.0.1", "192.88.99.1", "2002:808:808::"):
         with pytest.raises(RefusedAddress):
             open_connection("http", ip, "example.com", 1)
         with pytest.raises(RefusedAddress):
@@ -165,6 +166,7 @@ def test_https_failure_falls_back_to_http_and_sets_the_host_header() -> None:
     assert conn.headers is not None
     assert conn.headers["Host"] == "blog.example"
     assert conn.headers["User-Agent"] == USER_AGENT
+    assert conn.headers["Accept-Encoding"] == "identity"
 
 
 def test_https_success_does_not_try_http() -> None:
@@ -208,6 +210,54 @@ def test_errors_name_the_scheme_and_stop_after_four_addresses() -> None:
     snapshot = HttpProber(opener).probe("blog.example", "user.github.io", addresses, 1)  # type: ignore[arg-type]
     assert snapshot.error == "https timeout; http connection failed"
     assert seen == [f"{scheme}:{ip}" for scheme in ("https", "http") for ip in addresses[:4]]
+
+
+def test_a_redirect_is_not_followed() -> None:
+    seen: list[str] = []
+
+    class Redirecting(_Conn):
+        def __init__(self) -> None:
+            super().__init__(301, b"moved")
+            self.requests = 0
+
+        def request(self, method: str, path: str, headers: dict[str, str] | None = None, body: object = None) -> None:
+            self.requests += 1
+            super().request(method, path, headers, body)
+
+    conn = Redirecting()
+
+    def opener(scheme: str, ip: str, sni: str, timeout: float) -> Redirecting:
+        del sni, timeout
+        seen.append(f"{scheme}:{ip}")
+        return conn
+
+    snapshot = HttpProber(opener).probe("blog.example", "user.github.io", (PUBLIC,), 1)  # type: ignore[arg-type]
+    assert seen == [f"https:{PUBLIC}"]
+    assert conn.requests == 1
+    assert conn.path == "/"
+    assert snapshot.status == 301
+    assert snapshot.body == "moved"
+
+
+def test_a_bad_status_line_tries_the_next_scheme_and_hides_the_detail() -> None:
+    seen: list[str] = []
+
+    class Broken(_Conn):
+        def getresponse(self) -> _Response:
+            raise http.client.BadStatusLine("secret-token")
+
+    def opener(scheme: str, ip: str, sni: str, timeout: float) -> _Conn:
+        del ip, sni, timeout
+        seen.append(scheme)
+        if scheme == "https":
+            return Broken(0, b"")
+        return _Conn(404, b"There isn't a GitHub Pages site here")
+
+    snapshot = HttpProber(opener).probe("blog.example", "user.github.io", (PUBLIC,), 1)  # type: ignore[arg-type]
+    assert seen == ["https", "http"]
+    assert snapshot.status == 404
+    assert "secret" not in (snapshot.error or "")
+    assert snapshot.error is None
 
 
 def test_an_address_sni_skips_https() -> None:

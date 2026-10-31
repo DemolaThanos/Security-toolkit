@@ -12,6 +12,7 @@ from subtake.errors import SubtakeError
 from subtake.net import normalize_hostname
 
 _MAX_CHAIN = 8
+_MAX_ANSWERS = 64
 
 
 @dataclass(frozen=True)
@@ -101,7 +102,9 @@ def _addresses(lookup: Lookup, name: str) -> tuple[tuple[str, ...], str | None, 
     for item in (*(() if v4.error else v4.names), *(() if v6.error else v6.names)):
         if item not in addresses:
             addresses.append(item)
-    return tuple(addresses[:8]), None, False
+    if len(addresses) > _MAX_ANSWERS:
+        return (), "too many addresses", False
+    return tuple(addresses), None, False
 
 
 def _not_ip(value: str) -> bool:

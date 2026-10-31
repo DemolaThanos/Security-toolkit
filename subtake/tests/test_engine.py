@@ -135,6 +135,17 @@ def test_example_host_file_parses() -> None:
         "fec0::1",
         "::ffff:10.1.1.1",
         "::ffff:169.254.169.254",
+        "::ffff:192.88.99.1",
+        "192.88.99.1",
+        "2002:808:808::",
+        "64:ff9b::808:808",
+        "64:ff9b:1::a00:1",
+        "2001::1",
+        "2001:1::1",
+        "2001:3::1",
+        "2001:4:112::1",
+        "2001:20::1",
+        "3fff::1",
         "not-an-ip",
     ],
 )
@@ -220,6 +231,14 @@ def test_fingerprint_file_is_strict(tmp_path: Path) -> None:
         path = tmp_path / "broken.json"
         path.write_text("{", encoding="utf-8")
         load_fingerprints(str(path))
+    binary = tmp_path / "binary.json"
+    binary.write_bytes(b"\xff\xfe")
+    with pytest.raises(SubtakeError, match="UTF-8"):
+        load_fingerprints(str(binary))
+    huge = tmp_path / "huge.json"
+    huge.write_bytes(b"{" + b" " * 1_000_000)
+    with pytest.raises(SubtakeError, match="larger than"):
+        load_fingerprints(str(huge))
     too_many = []
     for index in range(201):
         item = dict(base)
@@ -505,6 +524,8 @@ def test_limiter_spaces_calls_and_zero_does_not_sleep() -> None:
     quiet = Limiter(0, now=lambda: 0.0, sleep=explode)
     quiet.wait()
     quiet.wait()
+    with pytest.raises(SubtakeError, match="rate"):
+        Limiter(5e-324)
 
 
 def test_bounds_and_one_failure_do_not_drop_other_hosts() -> None:
@@ -540,6 +561,8 @@ def test_bounds_and_one_failure_do_not_drop_other_hosts() -> None:
     )
     assert report.results[0].evidence == "check failed"
     assert report.results[0].verdict is Verdict.EDGE
+    assert report.broken == ("bad.example",)
+    assert "nope" not in report.results[0].evidence
     assert report.results[1].evidence == "name does not resolve"
     assert [item.host for item in report.results] == ["bad.example", "ok.example"]
 
@@ -585,6 +608,133 @@ def test_checks_run_concurrently() -> None:
     )
     assert [item.host for item in report.results] == list(hosts)
     assert {item.verdict for item in report.results} == {Verdict.SAFE}
+
+
+def test_an_earlier_cname_is_the_service_and_the_certificate_name() -> None:
+    records = {
+        ("assets.example", "CNAME"): QueryResult(names=("bucket.s3.amazonaws.com",)),
+        ("bucket.s3.amazonaws.com", "CNAME"): QueryResult(names=("s3-external-1.amazonaws.com",)),
+        ("s3-external-1.amazonaws.com", "CNAME"): QueryResult(),
+        ("s3-external-1.amazonaws.com", "A"): QueryResult(names=("93.184.216.34",)),
+        ("s3-external-1.amazonaws.com", "AAAA"): QueryResult(),
+    }
+    probe = _page(404, "<Code>NoSuchBucket</Code>")
+    result = assess("assets.example", MapLookup(records), probe, (S3,), 1, _pace())
+    assert result.verdict is Verdict.LIKELY
+    assert result.fingerprint == "aws-s3"
+    assert probe.calls[0][1] == "bucket.s3.amazonaws.com"
+
+
+def test_nxdomain_on_a_later_hop_does_not_inherit_the_provider_verdict() -> None:
+    records = {
+        ("blog.example", "CNAME"): QueryResult(names=("user.github.io",)),
+        ("user.github.io", "CNAME"): QueryResult(names=("gone.example.net",)),
+        ("gone.example.net", "CNAME"): QueryResult(nxdomain=True),
+    }
+    probe = _page(404, "There isn't a GitHub Pages site here")
+    result = assess("blog.example", MapLookup(records), probe, (GITHUB,), 1, _pace())
+    assert result.verdict is Verdict.EDGE
+    assert result.fingerprint == "github-pages"
+    assert "gone.example.net does not resolve" in result.evidence
+    assert probe.calls == []
+
+
+def test_a_private_address_past_the_eighth_still_refuses_the_set() -> None:
+    publics = tuple(f"9.9.9.{index}" for index in range(1, 10))
+    lookup = linked("blog.example", "user.github.io", addresses=(*publics, "10.1.1.1"))
+    probe = _page(404, "There isn't a GitHub Pages site here")
+    result = assess("blog.example", lookup, probe, (GITHUB,), 1, _pace())
+    assert result.verdict is Verdict.EDGE
+    assert "refusing non-public address" in result.evidence
+    assert probe.calls == []
+
+
+def test_too_many_addresses_are_not_probed() -> None:
+    addresses = tuple(f"8.8.{index // 250}.{index % 250}" for index in range(65))
+    lookup = linked("blog.example", "user.github.io", addresses=addresses)
+    probe = _page(200, "ok")
+    result = assess("blog.example", lookup, probe, (GITHUB,), 1, _pace())
+    assert result.verdict is Verdict.EDGE
+    assert result.evidence.endswith("too many addresses")
+    assert probe.calls == []
+
+
+def test_bundled_verdicts_follow_claimability() -> None:
+    services = {item.id: item for item in load_fingerprints()}
+    likely_nx = {
+        "aws-elastic-beanstalk",
+        "azure-api",
+        "azure-app-service",
+        "azure-blob",
+        "azure-cdn",
+        "azure-cloudapp",
+        "azure-static-website",
+        "azure-traffic-manager",
+        "bitbucket-pages",
+        "ghost",
+        "helpscout",
+        "railway",
+        "surge",
+    }
+    edge_nx = {
+        "aws-cloudfront",
+        "aws-elb",
+        "aws-s3",
+        "azure-front-door",
+        "azure-static-apps",
+        "fastly",
+        "firebase",
+        "fly-io",
+        "gcp-storage",
+        "github-pages",
+        "heroku",
+        "netlify",
+        "pantheon",
+        "shopify",
+        "tumblr",
+        "vercel",
+        "zendesk",
+    }
+    assert likely_nx | edge_nx == set(services)
+    for service_id in likely_nx:
+        assert services[service_id].nxdomain is Verdict.LIKELY
+    for service_id in edge_nx:
+        assert services[service_id].nxdomain is Verdict.EDGE
+    assert services["aws-s3"].http[0].verdict is Verdict.LIKELY
+    assert services["github-pages"].http[0].verdict is Verdict.EDGE
+    assert services["gcp-storage"].http[0].verdict is Verdict.EDGE
+    assert services["ghost"].http[0].body == "Failed to resolve DNS path for this host"
+    assert services["tumblr"].http[0].body.startswith("Whatever you were looking for")
+    assert services["netlify"].http[0].body == "Not Found - Request ID"
+
+    elb = linked("edge.example", "name.elb.us-east-1.amazonaws.com", nxdomain=True)
+    refused = assess("edge.example", elb, _page(200, ""), tuple(services.values()), 1, _pace())
+    assert refused.verdict is Verdict.EDGE
+    assert refused.fingerprint == "aws-elb"
+
+    pages = linked("blog.example", "user.github.io")
+    github = assess(
+        "blog.example",
+        pages,
+        _page(404, "There isn't a GitHub Pages site here."),
+        tuple(services.values()),
+        1,
+        _pace(),
+    )
+    assert github.verdict is Verdict.EDGE
+    assert "matched" in github.evidence
+
+    bucket = linked("assets.example", "bucket.s3.amazonaws.com")
+    missing = assess(
+        "assets.example",
+        bucket,
+        _page(404, "The specified bucket does not exist"),
+        tuple(services.values()),
+        1,
+        _pace(),
+    )
+    assert missing.verdict is Verdict.LIKELY
+    assert missing.fingerprint == "aws-s3"
 
 
 def test_resolve_chain_does_not_follow_a_ninth_cname() -> None:

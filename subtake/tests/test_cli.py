@@ -70,16 +70,16 @@ def test_likely_finding_exits_nonzero(
 ) -> None:
     lookup = _Lookup(
         {
-            ("blog.example", "CNAME"): QueryResult(names=("user.github.io",)),
-            ("user.github.io", "CNAME"): QueryResult(),
-            ("user.github.io", "A"): QueryResult(names=("93.184.216.34",)),
-            ("user.github.io", "AAAA"): QueryResult(),
+            ("assets.example", "CNAME"): QueryResult(names=("bucket.s3.amazonaws.com",)),
+            ("bucket.s3.amazonaws.com", "CNAME"): QueryResult(),
+            ("bucket.s3.amazonaws.com", "A"): QueryResult(names=("93.184.216.34",)),
+            ("bucket.s3.amazonaws.com", "AAAA"): QueryResult(),
             ("www.example", "CNAME"): QueryResult(),
         }
     )
-    probe = _Probe(HttpSnapshot(404, "There isn't a GitHub Pages site here.", None))
+    probe = _Probe(HttpSnapshot(404, "The specified bucket does not exist", None))
     _install(monkeypatch, lookup, probe)
-    code = main(["check", _write(tmp_path), "--i-am-authorized", "--timeout", "2.5"])
+    code = main(["check", _write(tmp_path, "assets.example\nwww.example\n"), "--i-am-authorized", "--timeout", "2.5"])
     captured = capsys.readouterr()
     assert code == 1
     assert "likely-vulnerable" in captured.out
@@ -87,7 +87,8 @@ def test_likely_finding_exits_nonzero(
     assert "no CNAME" in captured.out
     assert "written permission" in captured.err
     assert probe.calls
-    assert probe.calls[0][0] == "blog.example"
+    assert probe.calls[0][0] == "assets.example"
+    assert probe.calls[0][1] == "bucket.s3.amazonaws.com"
     assert probe.calls[0][3] == 2.5
     assert all(call[0] != "www.example" for call in probe.calls)
 
@@ -135,8 +136,8 @@ def test_json_and_sarif_and_output_file(
 ) -> None:
     lookup = _Lookup(
         {
-            ("blog.example", "CNAME"): QueryResult(names=("old.herokuapp.com",)),
-            ("old.herokuapp.com", "CNAME"): QueryResult(nxdomain=True),
+            ("blog.example", "CNAME"): QueryResult(names=("app.eu-west-1.elasticbeanstalk.com",)),
+            ("app.eu-west-1.elasticbeanstalk.com", "CNAME"): QueryResult(nxdomain=True),
             ("www.example", "CNAME"): QueryResult(nxdomain=True),
         }
     )
@@ -161,8 +162,8 @@ def test_json_and_sarif_and_output_file(
     assert payload["not_vulnerable"] == 1
     finding = next(item for item in payload["results"] if item["host"] == "blog.example")
     assert finding["verdict"] == "likely-vulnerable"
-    assert finding["fingerprint"] == "heroku"
-    assert finding["cname_chain"] == ["old.herokuapp.com"]
+    assert finding["fingerprint"] == "aws-elastic-beanstalk"
+    assert finding["cname_chain"] == ["app.eu-west-1.elasticbeanstalk.com"]
 
     sarif_path = tmp_path / "report.sarif"
     assert main(["check", _write(tmp_path), "--i-am-authorized", "--format", "sarif", "--output", str(sarif_path)]) == 1
@@ -172,7 +173,7 @@ def test_json_and_sarif_and_output_file(
     assert run["tool"]["driver"]["name"] == "subtake"
     results = run["results"]
     assert len(results) == 1
-    assert results[0]["ruleId"] == "subtake/heroku"
+    assert results[0]["ruleId"] == "subtake/aws-elastic-beanstalk"
     assert results[0]["level"] == "error"
     assert results[0]["partialFingerprints"]["primaryLocationLineHash"]
     assert "www.example" not in json.dumps(results)
@@ -306,6 +307,103 @@ def test_table_sarif_and_summary() -> None:
         render(report, "xml")
     with pytest.raises(SubtakeError):
         report.failing("critical")
+
+
+def test_github_signature_does_not_fail_the_default_gate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lookup = _Lookup(
+        {
+            ("blog.example", "CNAME"): QueryResult(names=("user.github.io",)),
+            ("user.github.io", "CNAME"): QueryResult(),
+            ("user.github.io", "A"): QueryResult(names=("93.184.216.34",)),
+            ("user.github.io", "AAAA"): QueryResult(),
+        }
+    )
+    _install(monkeypatch, lookup, _Probe(HttpSnapshot(404, "There isn't a GitHub Pages site here.", None)))
+    code = main(["check", _write(tmp_path, "blog.example\n"), "--i-am-authorized"])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "edge-case" in captured.out
+    assert "likely-vulnerable  blog.example" not in captured.out
+
+
+def test_a_thrown_check_exits_2_without_leaking_the_detail(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Boom:
+        def query(self, name: str, rdtype: str) -> QueryResult:
+            if name == "bad.example":
+                raise RuntimeError("secret resolver detail")
+            return QueryResult(nxdomain=True)
+
+    monkeypatch.setattr("subtake.cli.SystemLookup", lambda timeout: Boom())
+    monkeypatch.setattr("subtake.cli.HttpProber", lambda: _Probe(HttpSnapshot(200, "", None)))
+    destination = tmp_path / "report.json"
+    code = main(
+        [
+            "check",
+            _write(tmp_path, "bad.example\nok.example\n"),
+            "--i-am-authorized",
+            "--format",
+            "json",
+            "--output",
+            str(destination),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "secret" not in captured.err
+    assert "secret" not in captured.out
+    assert "check failed for bad.example" in captured.err
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert [item["host"] for item in payload["results"]] == ["bad.example", "ok.example"]
+    assert payload["results"][0]["evidence"] == "check failed"
+    assert payload["results"][1]["verdict"] == "not-vulnerable"
+
+
+def test_output_path_is_rejected_before_any_lookup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    hosts = work / "hosts.txt"
+    hosts.write_text("www.example\n", encoding="utf-8")
+    calls: list[object] = []
+
+    def boom(timeout: float) -> object:
+        calls.append(timeout)
+        raise AssertionError(timeout)
+
+    monkeypatch.setattr("subtake.cli.SystemLookup", boom)
+    assert main(["check", "hosts.txt", "--i-am-authorized", "--output", "missing/out.json"]) == 2
+    assert calls == []
+    assert "output directory" in capsys.readouterr().err
+
+    outside = tmp_path / "out.json"
+    link = work / "out.json"
+    link.symlink_to(outside)
+    assert main(["check", "hosts.txt", "--i-am-authorized", "--output", "out.json"]) == 2
+    assert calls == []
+    assert not outside.exists()
+
+
+def test_host_list_symlink_cannot_escape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    outside = tmp_path / "hosts.txt"
+    outside.write_text("www.example\n", encoding="utf-8")
+    link = work / "hosts.txt"
+    link.symlink_to(outside)
+    calls: list[object] = []
+    monkeypatch.setattr("subtake.cli.SystemLookup", lambda timeout: calls.append(timeout))
+    assert main(["check", "hosts.txt", "--i-am-authorized"]) == 2
+    assert calls == []
+    assert "working directory" in capsys.readouterr().err
 
 
 def test_ci_runs_subtake() -> None:

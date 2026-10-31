@@ -60,12 +60,11 @@ class HttpProber:
         for ip in addresses[:_MAX_ADDRESSES]:
             try:
                 conn = self._open(scheme, ip, sni, timeout)
+                return _exchange(conn, host), reason
             except RefusedAddress:
                 raise
-            except (TimeoutError, OSError, ssl.SSLError, http.client.HTTPException) as exc:
+            except (TimeoutError, OSError, ssl.SSLError, http.client.HTTPException, ValueError, TypeError) as exc:
                 reason = _error_text(exc)
-            else:
-                return _exchange(conn, host), reason
         return None, reason
 
 
@@ -113,6 +112,7 @@ def _exchange(conn: http.client.HTTPConnection, host: str) -> HttpSnapshot:
                 "Host": host,
                 "User-Agent": USER_AGENT,
                 "Accept": "*/*",
+                "Accept-Encoding": "identity",
                 "Connection": "close",
             },
         )
@@ -137,6 +137,6 @@ def _error_text(exc: Exception) -> str:
         return "timeout"
     if isinstance(exc, ssl.SSLError):
         return "tls failed"
-    if isinstance(exc, http.client.HTTPException):
+    if isinstance(exc, (http.client.HTTPException, ValueError, TypeError)):
         return "http failed"
     return "connection failed"

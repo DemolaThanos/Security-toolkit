@@ -4,9 +4,11 @@
       "id": "aws-cloudfront",
       "service": "Amazon CloudFront",
       "cname": ["*.cloudfront.net"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "not-vulnerable",
-      "http": []
+      "http": [
+        {"body": "ViewerCertificateException", "verdict": "edge-case"}
+      ]
     },
     {
       "id": "aws-elastic-beanstalk",
@@ -20,7 +22,7 @@
       "id": "aws-elb",
       "service": "AWS Elastic Load Balancing",
       "cname": ["*.elb.amazonaws.com", "*.elb.*.amazonaws.com"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "not-vulnerable",
       "http": []
     },
@@ -89,7 +91,7 @@
       "id": "azure-front-door",
       "service": "Azure Front Door",
       "cname": ["*.azurefd.net"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "not-vulnerable",
       "http": []
     },
@@ -97,7 +99,7 @@
       "id": "azure-static-apps",
       "service": "Azure Static Web Apps",
       "cname": ["*.azurestaticapps.net"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "not-vulnerable",
       "http": []
     },
@@ -134,24 +136,24 @@
       "nxdomain": "edge-case",
       "on_miss": "edge-case",
       "http": [
-        {"body": "Fastly error: unknown domain", "verdict": "likely-vulnerable"}
+        {"body": "Fastly error: unknown domain", "verdict": "edge-case"}
       ]
     },
     {
       "id": "firebase",
       "service": "Firebase Hosting",
       "cname": ["*.web.app", "*.firebaseapp.com"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "not-vulnerable",
       "http": [
-        {"body": "Site Not Found", "status": [404], "verdict": "likely-vulnerable"}
+        {"body": "Site Not Found", "status": [404], "verdict": "edge-case"}
       ]
     },
     {
       "id": "fly-io",
       "service": "Fly.io",
       "cname": ["*.fly.dev"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "not-vulnerable",
       "http": []
     },
@@ -162,8 +164,8 @@
       "nxdomain": "edge-case",
       "on_miss": "not-vulnerable",
       "http": [
-        {"body": "NoSuchBucket", "status": [404], "verdict": "likely-vulnerable"},
-        {"body": "The specified bucket does not exist", "status": [404], "verdict": "likely-vulnerable"}
+        {"body": "NoSuchBucket", "status": [404], "verdict": "edge-case"},
+        {"body": "The specified bucket does not exist", "status": [404], "verdict": "edge-case"}
       ]
     },
     {
@@ -173,6 +175,7 @@
       "nxdomain": "likely-vulnerable",
       "on_miss": "not-vulnerable",
       "http": [
+        {"body": "Failed to resolve DNS path for this host", "verdict": "likely-vulnerable"},
         {"body": "no longer here, or never was", "verdict": "likely-vulnerable"}
       ]
     },
@@ -180,13 +183,13 @@
       "id": "github-pages",
       "service": "GitHub Pages",
       "cname": ["*.github.io"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "edge-case",
       "http": [
         {
           "body": "There isn't a GitHub Pages site here",
           "status": [404],
-          "verdict": "likely-vulnerable"
+          "verdict": "edge-case"
         }
       ]
     },
@@ -204,29 +207,32 @@
       "id": "heroku",
       "service": "Heroku",
       "cname": ["*.herokuapp.com", "*.herokudns.com"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "not-vulnerable",
       "http": [
-        {"body": "No such app", "status": [404], "verdict": "likely-vulnerable"},
-        {"body": "no-such-app", "status": [404], "verdict": "likely-vulnerable"}
+        {"body": "No such app", "status": [404], "verdict": "edge-case"},
+        {"body": "no-such-app", "status": [404], "verdict": "edge-case"}
       ]
     },
     {
       "id": "netlify",
       "service": "Netlify",
       "cname": ["*.netlify.app", "*.netlify.com"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "not-vulnerable",
-      "http": []
+      "http": [
+        {"body": "Not Found - Request ID", "status": [404], "verdict": "edge-case"}
+      ]
     },
     {
       "id": "pantheon",
       "service": "Pantheon",
       "cname": ["*.pantheonsite.io"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "not-vulnerable",
       "http": [
-        {"body": "do not know of the site which you seek", "verdict": "likely-vulnerable"}
+        {"body": "404 - Unknown site", "verdict": "edge-case"},
+        {"body": "do not know of the site which you seek", "verdict": "edge-case"}
       ]
     },
     {
@@ -241,10 +247,10 @@
       "id": "shopify",
       "service": "Shopify",
       "cname": ["*.myshopify.com"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "edge-case",
       "http": [
-        {"body": "Sorry, this shop is currently unavailable", "verdict": "likely-vulnerable"}
+        {"body": "Sorry, this shop is currently unavailable", "verdict": "edge-case"}
       ]
     },
     {
@@ -264,28 +270,28 @@
       "nxdomain": "edge-case",
       "on_miss": "edge-case",
       "http": [
-        {"body": "There's nothing here", "status": [404], "verdict": "likely-vulnerable"}
+        {"body": "Whatever you were looking for doesn't currently exist at this address", "status": [404], "verdict": "edge-case"}
       ]
     },
     {
       "id": "vercel",
       "service": "Vercel",
       "cname": ["*.vercel.app", "cname.vercel-dns.com"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "edge-case",
       "http": [
-        {"body": "DEPLOYMENT_NOT_FOUND", "verdict": "likely-vulnerable"},
-        {"body": "The deployment could not be found", "verdict": "likely-vulnerable"}
+        {"body": "DEPLOYMENT_NOT_FOUND", "verdict": "edge-case"},
+        {"body": "The deployment could not be found", "verdict": "edge-case"}
       ]
     },
     {
       "id": "zendesk",
       "service": "Zendesk",
       "cname": ["*.zendesk.com"],
-      "nxdomain": "likely-vulnerable",
+      "nxdomain": "edge-case",
       "on_miss": "edge-case",
       "http": [
-        {"body": "Help Center Closed", "verdict": "likely-vulnerable"}
+        {"body": "Help Center Closed", "verdict": "edge-case"}
       ]
     }
   ]

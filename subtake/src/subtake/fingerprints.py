@@ -97,9 +97,15 @@ def _read(path: str | None) -> str:
     if info.st_size > _MAX_BYTES:
         raise SubtakeError(f"fingerprint file is larger than {_MAX_BYTES} bytes")
     try:
-        return file.read_text(encoding="utf-8")
+        data = file.read_bytes()
     except OSError as exc:
         raise SubtakeError(f"cannot read fingerprints: {exc.strerror or exc}") from exc
+    if len(data) > _MAX_BYTES:
+        raise SubtakeError(f"fingerprint file is larger than {_MAX_BYTES} bytes")
+    try:
+        return data.decode("utf-8")
+    except UnicodeError as exc:
+        raise SubtakeError("fingerprint file is not valid UTF-8") from exc
 
 
 def _parse(text: str) -> tuple[Service, ...]:

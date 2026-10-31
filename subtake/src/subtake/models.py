@@ -37,6 +37,7 @@ class Result:
 @dataclass(frozen=True)
 class Report:
     results: tuple[Result, ...]
+    broken: tuple[str, ...] = ()
 
     def counts(self) -> tuple[int, int, int]:
         likely = sum(item.verdict is Verdict.LIKELY for item in self.results)

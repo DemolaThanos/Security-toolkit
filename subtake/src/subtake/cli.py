@@ -40,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
                 "refusing to run without --i-am-authorized. "
                 "subtake is for hosts you own or have written permission to test."
             )
+        output = _prepare_output(args.output)
         hosts = read_host_list(args.hosts, limit=args.max_hosts)
         services = load_fingerprints(args.fingerprints)
         report = check_hosts(
@@ -52,10 +53,13 @@ def main(argv: list[str] | None = None) -> int:
             rate=float(args.rate),
         )
         body = render(report, args.format)
-        if args.output and args.output != "-":
-            Path(resolve_cli_path(args.output)).write_text(body, encoding="utf-8")
-        else:
+        if output is None:
             sys.stdout.write(body)
+        else:
+            Path(output).write_text(body, encoding="utf-8")
+        if report.broken:
+            print(_broken(report.broken), file=sys.stderr)
+            return 2
         return 1 if report.failing(args.fail_on) else 0
     except SubtakeError as exc:
         print(f"subtake: {exc}", file=sys.stderr)
@@ -67,6 +71,24 @@ def main(argv: list[str] | None = None) -> int:
             raise
         print(f"subtake: {exc}", file=sys.stderr)
         return 2
+
+
+def _prepare_output(raw: str | None) -> str | None:
+    if not raw or raw == "-":
+        return None
+    cleaned = resolve_cli_path(raw)
+    if os.path.isdir(cleaned):
+        raise SubtakeError(f"not a file: {raw}")
+    parent = os.path.dirname(cleaned)
+    if parent and not os.path.isdir(parent):
+        raise SubtakeError(f"output directory does not exist: {parent}")
+    return cleaned
+
+
+def _broken(hosts: tuple[str, ...]) -> str:
+    shown = ", ".join(hosts[:5])
+    extra = "" if len(hosts) <= 5 else f" and {len(hosts) - 5} more"
+    return f"subtake: check failed for {shown}{extra}"
 
 
 def _env_flag(name: str) -> bool:

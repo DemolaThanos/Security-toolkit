@@ -33,7 +33,7 @@ class Limiter:
             raise SubtakeError("rate must be between 0 and 50")
         if per_second < 0:
             raise SubtakeError("rate must be between 0 and 50")
-        self._gap = 0.0 if per_second == 0 else 1.0 / per_second
+        self._gap = _gap(per_second)
         self._now = time.monotonic if now is None else now
         self._sleep = time.sleep if sleep is None else sleep
         self._lock = threading.Lock()
@@ -81,6 +81,7 @@ def check_hosts(
     pace = Limiter(rate)
     wrapped = _LimitedLookup(lookup, pace)
     results = [_failed(name) for name in names]
+    broken: list[int] = []
     workers = min(concurrency, len(names))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
@@ -92,9 +93,11 @@ def check_hosts(
             try:
                 results[index] = future.result()
             except Exception:
-                logger.debug("failed checking %s", names[index], exc_info=True)
+                logger.warning("check failed for %s", names[index])
+                logger.debug("check failed for %s", names[index], exc_info=True)
                 results[index] = _failed(names[index])
-    report = Report(tuple(results))
+                broken.append(index)
+    report = Report(tuple(results), tuple(names[index] for index in sorted(broken)))
     likely, edge, safe = report.counts()
     logger.info(
         "checked %s hosts: %s likely-vulnerable, %s edge-case, %s not-vulnerable",
@@ -115,32 +118,64 @@ def assess(
     limiter: Limiter,
 ) -> Result:
     chain = resolve_chain(host, lookup)
+    matched = _matched(chain.cnames, services)
+    service = None if matched is None else matched[1]
     if chain.missing:
         return _result(host, Verdict.SAFE, None, chain, "name does not resolve", None)
     if chain.error:
-        service = match_name(chain.cnames[-1], services) if chain.cnames else None
         return _result(host, Verdict.EDGE, service, chain, chain.error, None)
     if not chain.cnames:
         return _result(host, Verdict.SAFE, None, chain, "no CNAME", None)
 
     terminal = chain.cnames[-1]
-    service = match_name(terminal, services)
     if chain.terminal_nxdomain:
-        if service is None:
-            detail = "target does not resolve and is not a tracked service"
-            return _result(host, Verdict.EDGE, None, chain, detail, None)
-        return _result(host, service.nxdomain, service, chain, f"{terminal} does not resolve", None)
-    if service is None:
+        return _nxdomain(host, chain, terminal, matched, services)
+    if matched is None:
         return _result(host, Verdict.SAFE, None, chain, "not a tracked service", None)
     if not chain.addresses:
-        return _result(host, Verdict.EDGE, service, chain, f"{terminal} has no address", None)
+        return _result(host, Verdict.EDGE, matched[1], chain, f"{terminal} has no address", None)
     targets = public_addresses(chain.addresses)
     if not targets:
-        return _result(host, Verdict.EDGE, service, chain, "refusing non-public address", None)
+        return _result(host, Verdict.EDGE, matched[1], chain, "refusing non-public address", None)
 
     limiter.wait()
-    snapshot = prober.probe(host, terminal, targets, timeout)
-    return _from_http(host, service, chain, snapshot)
+    # The certificate name is the provider CNAME, not a later hop the provider uses internally.
+    snapshot = prober.probe(host, matched[0], targets, timeout)
+    return _from_http(host, matched[1], chain, snapshot)
+
+
+def _matched(cnames: tuple[str, ...], services: tuple[Service, ...]) -> tuple[str, Service] | None:
+    for name in cnames:
+        found = match_name(name, services)
+        if found is not None:
+            return name, found
+    return None
+
+
+def _nxdomain(
+    host: str,
+    chain: Chain,
+    terminal: str,
+    matched: tuple[str, Service] | None,
+    services: tuple[Service, ...],
+) -> Result:
+    terminal_service = match_name(terminal, services)
+    if terminal_service is not None:
+        return _result(
+            host,
+            terminal_service.nxdomain,
+            terminal_service,
+            chain,
+            f"{terminal} does not resolve",
+            None,
+        )
+    # Only the name that failed to resolve can be the unclaimed one. An earlier hop already existed.
+    service = None if matched is None else matched[1]
+    if service is None:
+        detail = "target does not resolve and is not a tracked service"
+    else:
+        detail = f"{terminal} does not resolve"
+    return _result(host, Verdict.EDGE, service, chain, detail, None)
 
 
 def _from_http(host: str, service: Service, chain: Chain, snapshot: HttpSnapshot) -> Result:
@@ -215,3 +250,13 @@ def _bounds(timeout: float, concurrency: int, rate: float) -> None:
         raise SubtakeError("rate must be between 0 and 50")
     if rate < 0 or rate > 50:
         raise SubtakeError("rate must be between 0 and 50")
+    _gap(rate)
+
+
+def _gap(per_second: float) -> float:
+    if per_second == 0:
+        return 0.0
+    gap = 1.0 / per_second
+    if not math.isfinite(gap):
+        raise SubtakeError("rate must be between 0 and 50")
+    return gap
