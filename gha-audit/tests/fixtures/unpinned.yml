@@ -1,0 +1,15 @@
+name: unpinned
+on: push
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: example/setup-tool@v1
+      - uses: ./.github/actions/build
+      - uses: docker://alpine:3.19
+      - uses: docker://alpine@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

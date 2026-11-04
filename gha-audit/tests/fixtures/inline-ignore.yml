@@ -1,0 +1,14 @@
+name: ignored
+on: push
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # gha-audit: ignore[unpinned-action] internal mirror reviews this tag every Monday
+      - uses: example/internal-action@v1
+      # gha-audit: ignore[checkout-persist-credentials] release job pushes with a deploy key
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: true

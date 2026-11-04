@@ -1,0 +1,23 @@
+name: inject
+on:
+  issue_comment:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  show:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ github.event.comment.body }}"
+      - run: echo "${{ github.event.issue.title }}"
+      - run: echo "${{ github.head_ref }}"
+      - run: echo "${{ github.event.pull_request.body }}"
+      - run: echo "${{ format('{0}', github.event.issue.body) }}"
+      - run: echo "${{ github.event.commits[0].message }}"
+      - run: echo "${{ contains(github.event.issue.title, 'bug') }}"
+      - run: echo "${{ github.event.issue.title == 'ship it' }}"
+      - run: echo "${{ startsWith(github.head_ref, 'feat') }}"
+      - name: safe
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: echo "$BODY"

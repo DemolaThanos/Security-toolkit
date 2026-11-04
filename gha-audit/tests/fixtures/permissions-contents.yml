@@ -1,0 +1,22 @@
+name: contents
+on: push
+permissions:
+  contents: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: pytest
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: git push origin HEAD:main
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - run: pytest

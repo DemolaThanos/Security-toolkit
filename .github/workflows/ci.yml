@@ -26,6 +26,7 @@ jobs:
           - authrecon
           - tfplan-guard
           - subtake
+          - gha-audit
         python-version:
           - "3.11"
           - "3.12"

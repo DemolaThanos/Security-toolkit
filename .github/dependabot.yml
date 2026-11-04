@@ -36,3 +36,11 @@ updates:
     directory: /tfplan-guard
     schedule:
       interval: weekly
+  - package-ecosystem: pip
+    directory: /gha-audit
+    schedule:
+      interval: weekly
+  - package-ecosystem: uv
+    directory: /gha-audit
+    schedule:
+      interval: weekly
