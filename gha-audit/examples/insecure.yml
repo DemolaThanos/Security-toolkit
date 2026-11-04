@@ -1,0 +1,29 @@
+name: insecure
+
+on:
+  pull_request_target:
+  issue_comment:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+
+jobs:
+  build:
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: example/setup-tool@v1
+      - name: title
+        run: echo "${{ github.event.pull_request.title }}"
+      - name: comment
+        run: echo "${{ github.event.comment.body }}"
+      - name: deploy
+        env:
+          TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: ./deploy.sh
+
+  reuse:
+    uses: example/workflows/.github/workflows/deploy.yml@v1
+    secrets: inherit

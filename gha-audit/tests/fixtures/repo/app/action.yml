@@ -1,0 +1,7 @@
+name: build
+description: Found from the repository root.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo "${{ github.event.issue.title }}"
