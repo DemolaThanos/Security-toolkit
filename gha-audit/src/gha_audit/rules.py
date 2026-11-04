@@ -26,21 +26,33 @@ _PUBLIC_EVENTS = frozenset(
 _SECRET_EVENTS = _PUBLIC_EVENTS - {"pull_request", "fork"}
 
 _SHA = re.compile(r"^[0-9a-fA-F]{40}$")
-_GIT = re.compile(r"(?m)\bgit\s+(checkout|switch|reset|fetch|pull|clone)\b")
+_DIGEST = re.compile(r"@(?:sha256:[0-9a-fA-F]{64}|sha512:[0-9a-fA-F]{128})\Z")
+_CHECKOUT_CMD = re.compile(
+    r"(?im)\bgit\s+(?:checkout|switch|reset|fetch|pull|clone)\b|\bgh\s+pr\s+checkout\b|\bgh\s+repo\s+clone\b"
+)
+_GH_PR_CHECKOUT = re.compile(r"(?im)\bgh\s+pr\s+checkout\b")
 _PUBLISH_RUN = re.compile(r"(?im)\bgit\s+push\b|\bgh\s+release\s+(?:create|upload)\b|\bgh\s+pr\s+create\b")
 _TRUSTED_ACTOR = re.compile(r"['\"](?:OWNER|MEMBER|COLLABORATOR)['\"]", re.IGNORECASE)
+_BRACKET_KEY = re.compile(r"\[['\"]([A-Za-z0-9_-]+)['\"]\]")
+_BRACKET_INDEX = re.compile(r"\[(?:\*|\d+)\]")
+_ENV_NAME = re.compile(r"(?<![\w.])env\.([A-Za-z_][A-Za-z0-9_-]*)(?![\w-])")
+_FALSE_WORDS = frozenset({"false", "no", "off", "n"})
+_REF_KEYS = frozenset({"ref", "repository", "sha", "commit", "head-sha", "head_sha"})
 
+_PR_REPO = ("full_name", "clone_url", "ssh_url", "git_url", "html_url", "svn_url")
 _PR_HEAD = (
     "github.event.pull_request.head.sha",
     "github.event.pull_request.head.ref",
     "github.head_ref",
-    "github.event.pull_request.head.repo.full_name",
-    "github.event.pull_request.head.repo.clone_url",
+    *(f"github.event.pull_request.head.repo.{name}" for name in _PR_REPO),
 )
 _RUN_HEAD = (
     "github.event.workflow_run.head_sha",
     "github.event.workflow_run.head_branch",
-    "github.event.workflow_run.head_repository.full_name",
+    "github.event.workflow_run.pull_requests.head.sha",
+    "github.event.workflow_run.pull_requests.head.ref",
+    *(f"github.event.workflow_run.head_repository.{name}" for name in _PR_REPO),
+    *(f"github.event.workflow_run.pull_requests.head.repo.{name}" for name in _PR_REPO),
 )
 
 _PUBLISH_ACTIONS = frozenset(
@@ -61,8 +73,8 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "unpinned-action",
         Severity.HIGH,
-        "A third-party action is not pinned to a full commit SHA.",
-        "Set uses to a 40-character commit SHA. A tag or branch can be moved.",
+        "A third-party action or container image is not pinned.",
+        "Pin uses to a 40-character commit SHA, or a sha256 digest for a docker:// image.",
     ),
     Rule(
         "pwn-request",
@@ -160,10 +172,11 @@ def _pwn(doc: Document) -> list[Finding]:
     findings: list[Finding] = []
     for job in doc.jobs:
         for step in job.steps:
-            trigger = _step_pwn(step, doc.events)
+            tainted = _tainted_env(doc, job, step)
+            trigger = _step_pwn(step, doc.events, tainted)
             if trigger is None:
                 continue
-            line = step.run_line if step.run and not _is_checkout(step.uses) else _checkout_ref_line(step)
+            line = step.run_line if step.run and not _is_checkout(step.uses) else _checkout_ref_line(step, tainted)
             findings.append(
                 _finding(doc, "pwn-request", line, f"{_where(doc, job)} checks out untrusted head code on {trigger}")
             )
@@ -174,17 +187,16 @@ def _injection(doc: Document) -> list[Finding]:
     findings: list[Finding] = []
     for job in doc.jobs:
         for step in job.steps:
-            if not step.run:
-                continue
-            for label in leaking_contexts(step.run):
-                findings.append(
-                    _finding(
-                        doc,
-                        "script-injection",
-                        step.run_line,
-                        f"{_where(doc, job)} interpolates {label} into a run script",
+            for script, line, sink in _script_sinks(step):
+                for label in leaking_contexts(script):
+                    findings.append(
+                        _finding(
+                            doc,
+                            "script-injection",
+                            line,
+                            f"{_where(doc, job)} interpolates {label} into {sink}",
+                        )
                     )
-                )
     return findings
 
 
@@ -340,14 +352,19 @@ def _runners(doc: Document) -> list[Finding]:
 
 def _pin_problem(uses: str, *, allow_actions: bool) -> str | None:
     text = " ".join(uses.split())
-    if text.startswith("./") or text.startswith("docker://"):
+    if text.startswith("./") or text.startswith(".\\"):
         return None
+    if text.lower().startswith("docker://"):
+        image = text.split("://", 1)[1]
+        if image and _DIGEST.search(image):
+            return None
+        return f"{text}, which is not pinned to an image digest"
     if "${{" in text:
         return f"{text}, which is an expression rather than a 40-character commit SHA"
     name, sep, ref = text.rpartition("@")
     if not sep or not ref.strip():
         return f"{text}, which is not pinned to a 40-character commit SHA"
-    ref = ref.strip()
+    ref = ref.split(" #", 1)[0].strip()
     if allow_actions and _actions_org(name):
         return None
     if _SHA.fullmatch(ref):
@@ -357,34 +374,102 @@ def _pin_problem(uses: str, *, allow_actions: bool) -> str | None:
 
 def _actions_org(name: str) -> bool:
     owner, sep, rest = name.partition("/")
-    return bool(sep and owner == "actions" and rest)
+    return bool(sep and owner.lower() == "actions" and rest)
 
 
-def _step_pwn(step: Step, events: frozenset[str]) -> str | None:
+def _step_pwn(step: Step, events: frozenset[str], tainted: set[str]) -> str | None:
     if step.uses and _is_checkout(step.uses):
-        text = "\n".join(pair.text for pair in step.with_args if pair.key in {"ref", "repository"})
-        return _head_checkout(text, events)
-    if step.run and _GIT.search(step.run):
-        return _head_checkout(step.run, events)
+        text = _arg_text(step, {"ref", "repository"})
+        found = _head_checkout(text, events, tainted)
+        if found:
+            return found
+    if step.run and _CHECKOUT_CMD.search(step.run):
+        if _GH_PR_CHECKOUT.search(step.run):
+            return _privileged(events)
+        return _head_checkout(step.run, events, tainted)
+    if step.uses and _is_local_uses(step.uses):
+        return _head_checkout(_arg_text(step, _REF_KEYS), events, tainted)
     return None
 
 
-def _head_checkout(text: str, events: frozenset[str]) -> str | None:
-    compact = "".join(text.split())
+def _head_checkout(text: str, events: frozenset[str], tainted: set[str] | None = None) -> str | None:
+    compact = _normalize_ref(text)
+    if tainted and _mentions_env(compact, tainted):
+        return _privileged(events)
     if "pull_request_target" in events:
         if any(item in compact for item in _PR_HEAD):
             return "pull_request_target"
         if "refs/pull/" in compact and ("/head" in compact or "/merge" in compact):
             return "pull_request_target"
-    if "workflow_run" in events and any(item in compact for item in _RUN_HEAD):
+    if "workflow_run" in events:
+        if any(item in compact for item in _RUN_HEAD):
+            return "workflow_run"
+        if "refs/pull/" in compact and ("/head" in compact or "/merge" in compact):
+            return "workflow_run"
+    return None
+
+
+def _privileged(events: frozenset[str]) -> str | None:
+    if "pull_request_target" in events:
+        return "pull_request_target"
+    if "workflow_run" in events:
         return "workflow_run"
     return None
+
+
+def _normalize_ref(text: str) -> str:
+    compact = "".join(text.split())
+    compact = _BRACKET_KEY.sub(r".\1", compact)
+    return _BRACKET_INDEX.sub("", compact)
+
+
+def _arg_text(step: Step, keys: set[str] | frozenset[str]) -> str:
+    return "\n".join(pair.text for pair in step.with_args if pair.key in keys)
+
+
+def _is_local_uses(uses: str) -> bool:
+    text = " ".join(uses.split())
+    return text.startswith("./") or text.startswith(".\\")
 
 
 def _is_checkout(uses: str | None) -> bool:
     if not uses:
         return False
-    return uses.split("@", 1)[0].strip() == "actions/checkout"
+    return _uses_name(uses) == "actions/checkout"
+
+
+def _script_sinks(step: Step) -> list[tuple[str, int, str]]:
+    sinks: list[tuple[str, int, str]] = []
+    if step.run:
+        sinks.append((step.run, step.run_line, "a run script"))
+    if step.uses and _uses_name(step.uses) == "actions/github-script":
+        for arg in step.with_args:
+            if arg.key == "script" and isinstance(arg.value, str):
+                sinks.append((arg.value, arg.line, "a github-script block"))
+    return sinks
+
+
+def _tainted_env(doc: Document, job: Job, step: Step) -> set[str]:
+    values: dict[str, str] = {}
+    for pair in (*doc.env, *job.env, *step.env):
+        values[pair.key] = pair.text
+    tainted: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for name, text in values.items():
+            if name in tainted:
+                continue
+            if _head_checkout(text, doc.events) or _mentions_env(_normalize_ref(text), tainted):
+                tainted.add(name)
+                changed = True
+    return tainted
+
+
+def _mentions_env(text: str, names: set[str]) -> bool:
+    if not names:
+        return False
+    return any(name in names for name in _ENV_NAME.findall(text))
 
 
 def _persists_credentials(step: Step) -> bool:
@@ -398,7 +483,8 @@ def _persists_credentials(step: Step) -> bool:
 def _is_false(value: object) -> bool:
     if value is False:
         return True
-    return isinstance(value, str) and value.strip().lower() == "false"
+    # GitHub's workflow parser still accepts the YAML 1.1 spellings of false.
+    return isinstance(value, str) and value.strip().lower() in _FALSE_WORDS
 
 
 def _persist_line(step: Step) -> int:
@@ -408,11 +494,13 @@ def _persist_line(step: Step) -> int:
     return step.uses_line
 
 
-def _checkout_ref_line(step: Step) -> int:
+def _checkout_ref_line(step: Step, tainted: set[str]) -> int:
     triggers = frozenset({"pull_request_target", "workflow_run"})
     for arg in step.with_args:
-        if arg.key in {"ref", "repository"} and _head_checkout(arg.text, triggers):
+        if arg.key in _REF_KEYS and _head_checkout(arg.text, triggers, tainted):
             return arg.line
+    if step.run:
+        return step.run_line
     return step.uses_line
 
 
@@ -425,14 +513,22 @@ def _needs_contents_write(job: Job) -> bool:
     return False
 
 
-def _action_id(uses: str) -> str:
-    name = uses.split("@", 1)[0].strip()
-    if name.startswith("./") or name.startswith("docker://"):
-        return ""
+def _uses_name(uses: str) -> str:
+    text = " ".join(uses.split())
+    name = text.split("@", 1)[0].strip()
+    if name.startswith("./") or name.lower().startswith("docker://"):
+        return name
     parts = [part for part in name.split("/") if part]
-    if len(parts) < 2:
-        return name.lower()
-    return f"{parts[0]}/{parts[1]}".lower()
+    if len(parts) >= 2:
+        return f"{parts[0]}/{parts[1]}".lower()
+    return name.lower()
+
+
+def _action_id(uses: str) -> str:
+    name = _uses_name(uses)
+    if name.startswith("./") or name.lower().startswith("docker://"):
+        return ""
+    return name
 
 
 def _guarded(expr: str | None) -> bool:
@@ -440,13 +536,45 @@ def _guarded(expr: str | None) -> bool:
     if not expr:
         return False
     compact = "".join(expr.split()).lower()
-    if "head.repo.full_name==github.repository" in compact:
-        return True
-    if "head.repo.full_name==github.event.pull_request.base.repo.full_name" in compact:
-        return True
-    if "head.repo.fork==false" in compact:
+    if _same_repo(compact):
         return True
     return "author_association" in compact and _TRUSTED_ACTOR.search(expr) is not None
+
+
+def _same_repo(compact: str) -> bool:
+    lefts = (
+        "github.event.pull_request.head.repo.full_name",
+        "github.event.workflow_run.head_repository.full_name",
+    )
+    rights = (
+        "github.repository",
+        "github.event.pull_request.base.repo.full_name",
+        "github.event.workflow_run.repository.full_name",
+    )
+    for left in lefts:
+        for right in rights:
+            if _has_eq(compact, left, right):
+                return True
+    forks = (
+        "github.event.pull_request.head.repo.fork",
+        "github.event.workflow_run.head_repository.fork",
+    )
+    return any(_has_eq(compact, fork, "false") for fork in forks)
+
+
+def _has_eq(compact: str, left: str, right: str) -> bool:
+    for first, second in ((left, right), (right, left)):
+        needle = f"{first}=={second}"
+        start = 0
+        while True:
+            index = compact.find(needle, start)
+            if index < 0:
+                break
+            end = index + len(needle)
+            if end >= len(compact) or not (compact[end].isalnum() or compact[end] == "_"):
+                return True
+            start = index + 1
+    return False
 
 
 def _workflow_env_exposed(doc: Document) -> bool:

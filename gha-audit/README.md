@@ -27,7 +27,7 @@ With no paths, it reads `.github/workflows`. A directory that contains `.github/
 
 Exit codes: `0` nothing at or above the threshold, `1` findings, `2` a file could not be read, the path is rejected, an ignore is invalid, or there was nothing to scan. The default threshold is `high`. Findings below the threshold are still printed. `GHA_AUDIT_LOG_FORMAT=json` writes one JSON object per log line.
 
-`--format` is `table` (default), `json`, or `sarif`. SARIF is 2.1.0 and includes a stable `partialFingerprints.primaryLocationLineHash`. Relative paths have to stay inside the working directory after symlinks are resolved. An absolute path is used as given.
+`--format` is `table` (default), `json`, or `sarif`. SARIF is 2.1.0. Each result has `partialFingerprints.primaryLocationLineHash`, and a file that could not be parsed is a `parse-error` result. Relative paths have to stay inside the working directory after symlinks are resolved. A workflow passed as an absolute path is read from that path. `--output` and `--config` are different: the file they name has to resolve inside the working directory, including when the path is absolute or a symlink.
 
 `gha-audit examples/insecure.yml` prints one row per finding. The run below is shortened; the real table is aligned:
 
@@ -99,16 +99,16 @@ justification = "The release job pushes the tag and opens the GitHub release."
 
 | Rule | Severity | What it catches |
 | --- | --- | --- |
-| `unpinned-action` | high | `uses` is not a 40-character commit SHA. `./` actions and `docker://` images are not this rule. `actions/*` is included unless `allow_actions_refs` is set |
-| `pwn-request` | critical | `pull_request_target` or `workflow_run` checks out the head SHA, head ref, head repository, or `refs/pull/.../head` or `/merge`, including a `git checkout` of that ref |
-| `script-injection` | critical | an attacker-controlled context (issue or PR title or body, `github.head_ref`, comment or review body, commit message, `workflow_run` head branch) is interpolated into `run:`. `contains`, `startsWith`, `endsWith`, and comparisons are not this rule. Passing the value through `env:` is the fix |
-| `permissions-missing` | medium | no top-level `permissions` block |
+| `unpinned-action` | high | `uses` is not a 40-character commit SHA. A `docker://` image must use a `sha256` or `sha512` digest. A local `./` action is not pinned by SHA. `actions/*` is included unless `allow_actions_refs` is set |
+| `pwn-request` | critical | `pull_request_target` or `workflow_run` checks out the head SHA, head ref, head repository, or `refs/pull/.../head` or `/merge`. Bracket notation (`github['event']...`) counts. So does `gh pr checkout`, a `git checkout` of that ref, a head SHA copied into `env:` and read back in the same job, and a `ref` passed into a local `./` action |
+| `script-injection` | critical | an attacker-controlled context is interpolated into `run:` or into `actions/github-script`'s `script` input. The contexts are the ones in GitHub Security Lab's untrusted-input list: issue, pull request, comment, review, and discussion title or body, `github.head_ref`, head ref and label, commit messages and author or committer name and email, `pages` page names, the default branch of a pull request head repo, and `workflow_run` head branch, display title, head commit, and `pull_requests`. `contains`, `startsWith`, `endsWith`, and comparisons are not this rule. `&&` and `||` are, because they can return an operand. Passing the value through `env:` is the fix |
+| `permissions-missing` | medium | no top-level `permissions` block. A job-level block does not clear this. `permissions: {}` is an explicit empty token and is not this rule |
 | `permissions-write-all` | high | workflow or job `permissions: write-all` |
-| `permissions-contents-write` | low | `contents: write` on a job that does not push or call a known release or commit action. Workflow-level `contents: write` is flagged when a job that inherits it does not publish |
-| `checkout-persist-credentials` | medium | `actions/checkout` without `persist-credentials: false` |
-| `secret-untrusted` | high | `secrets.*` or `github.token` is passed to a step on `pull_request_target`, `workflow_run`, or an issue, comment, review, or discussion event. A same-repo or `OWNER` / `MEMBER` / `COLLABORATOR` guard on the job or step suppresses it |
+| `permissions-contents-write` | low | `contents: write` on a job that does not push or call a known release or commit action. Workflow-level `contents: write` is flagged when a job that inherits it does not publish. A job that sets its own `permissions` does not inherit the workflow value |
+| `checkout-persist-credentials` | medium | `actions/checkout` without `persist-credentials` set to false. `false`, `no`, and `off` count. The action name is matched case-insensitively |
+| `secret-untrusted` | high | `secrets`, `secrets.*`, or `github.token` is passed to a step on `pull_request_target`, `workflow_run`, or an issue, comment, review, or discussion event. A quoted literal such as `'secrets.TOKEN'` does not count. A same-repo comparison written either way around, or an `OWNER` / `MEMBER` / `COLLABORATOR` guard on the job or step, suppresses it |
 | `secrets-inherit` | high | a reusable workflow is called with `secrets: inherit` |
-| `self-hosted-public` | high | `runs-on` uses `self-hosted`, a runner `group`, or a matrix value of `self-hosted`, and the workflow has a public trigger such as `pull_request` |
+| `self-hosted-public` | high | `runs-on` is the label `self-hosted`, a runner `group`, or a matrix value `self-hosted`, and the workflow has a public trigger such as `pull_request`. A longer label that merely contains the words is not this rule |
 
 `pull_request` is a public trigger for self-hosted runners. It is not in `secret-untrusted`, because GitHub does not pass secrets to workflows run from forks. `pull_request_target` is in both.
 
@@ -116,17 +116,21 @@ A job is treated as needing `contents: write` when a step runs `git push`, `gh r
 
 ## Limitations
 
-The guard check looks for a few well-known expressions. It does not evaluate `if:`. A guard that is true for some other reason is still a finding, and a guard written in an unusual shape may be missed.
+actionlint is the syntax checker: workflow schema, expression types, and shellcheck. [zizmor](https://github.com/zizmorcore/zizmor) covers a wider set of Actions bugs than this tool does, including obfuscated expressions, cache poisoning, known-vulnerable actions, and impostor commits. gha-audit does not. The untrusted-context list follows GitHub Security Lab's published note, [Keeping your GitHub Actions and workflows secure: Untrusted input](https://securitylab.github.com/research/github-actions-untrusted-input/). The code is not taken from zizmor or actionlint.
+
+The guard check looks for a few well-known expressions. It does not evaluate `if:`. A guard that is true for some other reason is still a finding, and a guard written in an unusual shape may be missed. A head SHA copied through a step output, or through another job, is not followed. A local action is not inlined into the workflow that calls it, except for a `ref`-style input written on the calling step. Run `gha-audit .` if composite `action.yml` files should be checked on their own. `gha-audit` with no path only reads `.github/workflows`.
 
 `contents: write` is a heuristic. A custom publish script that does not look like `git push` or `gh release` is flagged. Suppress it with a justification.
 
-Reusable workflows are not fetched. A `uses` call is judged from the caller only. Docker image tags are not judged. `permissions: read-all` is not flagged.
+Reusable workflows are not fetched. A `uses` call is judged from the caller only. `permissions: read-all` is not flagged. A `runs-on` group is reported even when the group is a GitHub-hosted larger runner, because the file does not say who owns the group. A self-hosted runner selected only by a custom label is not detected.
 
-Script injection covers the contexts in the table, not every `${{ }}` value. A context buried in an expression this parser cannot read is flagged if the text of that context is still there.
+Script injection covers the contexts in the table, on `run:` and on `actions/github-script`. It does not cover every action input. A context buried in an expression this parser cannot read is flagged if the text of that context is still there.
 
-`allow_actions_refs` accepts any ref of `actions/*`, including branches. It does not exempt any other owner.
+`allow_actions_refs` accepts any ref of `actions/*`, including branches. It does not exempt any other owner, and it does not exempt `docker://` images.
 
-Files over 1 MB are rejected. YAML anchors are capped so a document cannot expand without bound. This is not a substitute for zizmor, actionlint, or OpenSSF Scorecard.
+A file that cannot be parsed is an error. The command exits 2. It is not reported as clean. Files over 1 MB are rejected. Documents deeper than 64 levels are rejected. YAML anchors are capped on the way in and again while they expand, so a small file cannot blow up into a huge one. Merge keys (`<<`) are expanded. A repeated key in the file itself is an error. `on:` stays the trigger key; YAML 1.1 would otherwise read it as a boolean.
+
+This is not a substitute for zizmor, actionlint, or OpenSSF Scorecard.
 
 ## License
 

@@ -27,9 +27,15 @@ _UNTRUSTED: tuple[tuple[str, ...], ...] = (
     ("github", "event", "head_commit", "message"),
     ("github", "event", "head_commit", "author", "email"),
     ("github", "event", "head_commit", "author", "name"),
+    ("github", "event", "head_commit", "committer", "email"),
+    ("github", "event", "head_commit", "committer", "name"),
     ("github", "event", "commits"),
+    ("github", "event", "pull_request", "head", "repo", "default_branch"),
+    ("github", "event", "pages"),
     ("github", "event", "workflow_run", "head_branch"),
     ("github", "event", "workflow_run", "display_title"),
+    ("github", "event", "workflow_run", "head_commit"),
+    ("github", "event", "workflow_run", "pull_requests"),
 )
 
 _BOOL_CALLS = frozenset(
@@ -46,7 +52,9 @@ _BOOL_CALLS = frozenset(
 )
 
 _LABELS = tuple(sorted({".".join(item) for item in _UNTRUSTED}, key=len, reverse=True))
-_SECRET = re.compile(r"secrets\s*(?:\.|\[)|github\.token\b")
+# `secrets` is the secrets context. `github.token` is the automatic token.
+# A dot or identifier character before either name means some other field.
+_SECRET = re.compile(r"(?<![\w.])secrets\b|(?<![\w.])github\.token\b")
 _CMP = ("==", "!=", "<=", ">=", "<", ">")
 
 
@@ -89,7 +97,30 @@ def leaking_contexts(script: str) -> list[str]:
 
 
 def contains_secret(text: str) -> bool:
-    return any(_SECRET.search(body) for body in iter_expressions(text))
+    return any(_SECRET.search(_without_strings(body)) for body in iter_expressions(text))
+
+
+def _without_strings(body: str) -> str:
+    """Drop single-quoted GitHub expression strings so a literal cannot match."""
+    out: list[str] = []
+    index = 0
+    limit = len(body)
+    while index < limit:
+        if body[index] != "'":
+            out.append(body[index])
+            index += 1
+            continue
+        index += 1
+        while index < limit:
+            if body[index] == "'" and index + 1 < limit and body[index + 1] == "'":
+                index += 2
+                continue
+            if body[index] == "'":
+                index += 1
+                break
+            index += 1
+        out.append("''")
+    return "".join(out)
 
 
 def _labels_in(body: str) -> list[str]:

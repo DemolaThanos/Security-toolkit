@@ -9,7 +9,7 @@ from gha_audit import __version__
 from gha_audit.ignore import ConfigError, Ignore, load_config
 from gha_audit.logsetup import configure_logging
 from gha_audit.models import Options, parse_severity
-from gha_audit.paths import resolve_cli_path
+from gha_audit.paths import contained_file, resolve_cli_path
 from gha_audit.report import render
 from gha_audit.scan import scan
 
@@ -36,7 +36,8 @@ def main(argv: list[str] | None = None) -> int:
         report = scan(roots, options=options, ignores=ignores)
         body = render(report, args.format)
         if destination:
-            Path(destination).write_text(body, encoding="utf-8")
+            # Join the cwd with the relative path so the write cannot leave it.
+            contained_file(destination).write_text(body, encoding="utf-8")
         else:
             sys.stdout.write(body)
         if report.errors:

@@ -9,6 +9,7 @@ import yaml
 MAX_BYTES = 1_000_000
 _MAX_ALIASES = 1_000
 _MAX_NODES = 100_000
+_MAX_DEPTH = 64
 
 # PyYAML's YAML 1.1 rules treat `on`, `off`, `yes`, and `no` as booleans.
 # Workflow files use an unquoted `on:` key, so those spellings stay strings.
@@ -40,31 +41,60 @@ class LineLoader(yaml.SafeLoader):  # type: ignore[misc]
         self._node_count = nodes
         if nodes > _MAX_NODES:
             raise yaml.YAMLError("YAML document exceeds the node limit")
-        return super().compose_node(parent, index)
+        # Depth is counted here because construction defers nested values.
+        depth = getattr(self, "_depth", 0) + 1
+        if depth > _MAX_DEPTH:
+            raise yaml.YAMLError("YAML document exceeds the depth limit")
+        self._depth = depth
+        try:
+            return super().compose_node(parent, index)
+        finally:
+            self._depth = depth - 1
+
+    def construct_object(self, node: Any, deep: bool = False) -> Any:
+        expanded = getattr(self, "_expanded", 0) + 1
+        self._expanded = expanded
+        if expanded > _MAX_NODES:
+            raise yaml.YAMLError("YAML document exceeds the expansion limit")
+        return super().construct_object(node, deep)
 
     def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> MarkedDict:
+        # Reject a repeated key in the file itself, then expand `<<` merges.
+        # A merge reuses keys on purpose; the later explicit key wins.
+        self._reject_duplicate_keys(node)
+        self.flatten_mapping(node)
         mapping = MarkedDict(node.start_mark.line + 1)
         for key_node, value_node in node.value:
-            key = self.construct_object(key_node, deep=deep)
-            if isinstance(key, bool):
-                key = "on" if key else "off"
-            if not isinstance(key, str):
-                raise yaml.constructor.ConstructorError(
-                    None,
-                    None,
-                    f"mapping key {key!r} is not a string",
-                    key_node.start_mark,
-                )
-            if key in mapping:
+            key = self._string_key(key_node, deep)
+            mapping[key] = self.construct_object(value_node, deep=deep)
+            mapping.key_lines[key] = key_node.start_mark.line + 1
+        return mapping
+
+    def _reject_duplicate_keys(self, node: yaml.MappingNode) -> None:
+        seen: set[str] = set()
+        for key_node, _value_node in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                continue
+            key = self._string_key(key_node, deep=False)
+            if key in seen:
                 raise yaml.constructor.ConstructorError(
                     None,
                     None,
                     f"duplicate key {key!r}",
                     key_node.start_mark,
                 )
-            mapping[key] = self.construct_object(value_node, deep=deep)
-            mapping.key_lines[key] = key_node.start_mark.line + 1
-        return mapping
+            seen.add(key)
+
+    def _string_key(self, key_node: yaml.Node, deep: bool) -> str:
+        key = self.construct_object(key_node, deep=deep)
+        if isinstance(key, str):
+            return key
+        raise yaml.constructor.ConstructorError(
+            None,
+            None,
+            f"mapping key {key!r} is not a string",
+            key_node.start_mark,
+        )
 
     def construct_sequence(self, node: yaml.SequenceNode, deep: bool = False) -> MarkedList:
         seq = MarkedList(node.start_mark.line + 1)
@@ -124,6 +154,8 @@ def load_document(text: str) -> tuple[Any, str | None]:
             document = loader.get_single_data()
         finally:
             loader.dispose()
+    except RecursionError:
+        return None, "not valid YAML: document is too deeply nested"
     except yaml.YAMLError as exc:
         message = " ".join(str(exc).split())
         return None, f"not valid YAML: {message}"

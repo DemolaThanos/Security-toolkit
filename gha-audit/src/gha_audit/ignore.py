@@ -8,12 +8,14 @@ from pathlib import Path, PurePosixPath
 
 from gha_audit.load import MAX_BYTES
 from gha_audit.models import Finding, Options
+from gha_audit.paths import contained_file
 from gha_audit.rules import RULE_INDEX
 
 _MIN_JUSTIFICATION = 12
 _PLACEHOLDER = re.compile(r"(?i)^(todo|fixme|later|wip|n/?a|none|ignore|false|tbd|xxx+|test|ok|no)$")
 _RULE_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-_DIRECTIVE = re.compile(r"gha-audit:\s*ignore\[([^\]\n]+)\]\s*(.*)$")
+# Spaces are written out so the rule id and the justification do not overlap.
+_DIRECTIVE = re.compile(r"gha-audit:[ \t]*ignore\[([^\]\n]+)\](.*)\Z")
 _CONFIG_KEYS = frozenset({"allow_actions_refs", "ignore"})
 _ENTRY_KEYS = frozenset({"rule", "path", "justification"})
 
@@ -45,17 +47,21 @@ class Ignore:
 
 
 def load_config(path: Path) -> tuple[Options, tuple[Ignore, ...]]:
-    display = path.as_posix()
-    if not path.is_file():
+    try:
+        target = contained_file(path)
+    except ValueError as exc:
+        raise ConfigError([str(exc)]) from exc
+    display = target.as_posix()
+    if not target.is_file():
         raise ConfigError([f"{display} is not a file"])
     try:
-        size = path.stat().st_size
+        size = target.stat().st_size
     except OSError as exc:
         raise ConfigError([f"cannot read {display}: {exc}"]) from exc
     if size > MAX_BYTES:
         raise ConfigError([f"{display} is larger than {MAX_BYTES} bytes"])
     try:
-        text = path.read_text(encoding="utf-8")
+        text = target.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise ConfigError([f"cannot read {display}: {exc}"]) from exc
     try:

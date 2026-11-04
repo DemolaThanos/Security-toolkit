@@ -12,3 +12,4 @@ jobs:
       - uses: example/setup-tool@v1
       - uses: ./.github/actions/build
       - uses: docker://alpine:3.19
+      - uses: docker://alpine@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

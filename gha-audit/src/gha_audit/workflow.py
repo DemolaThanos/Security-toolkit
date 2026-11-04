@@ -274,9 +274,12 @@ def _expr(value: object) -> str | None:
 
 def _self_hosted(runs_on: object, matrix: object) -> bool:
     if isinstance(runs_on, str):
-        if "self-hosted" in runs_on:
+        if runs_on.strip() == "self-hosted":
             return True
-        return _matrix_self_hosted(runs_on, matrix)
+        if _matrix_self_hosted(runs_on, matrix):
+            return True
+        compact = "".join(runs_on.split())
+        return "'self-hosted'" in compact or '"self-hosted"' in compact
     if isinstance(runs_on, list):
         return any(_self_hosted(item, matrix) for item in runs_on)
     if isinstance(runs_on, dict):

@@ -116,7 +116,7 @@ def _result(finding: Finding) -> dict[str, object]:
 
 
 def _error_result(message: str) -> dict[str, object]:
-    return {
+    result: dict[str, object] = {
         "ruleId": "parse-error",
         "level": "error",
         "message": {"text": message},
@@ -124,6 +124,27 @@ def _error_result(message: str) -> dict[str, object]:
             "primaryLocationLineHash": hashlib.sha256(f"parse-error\n{message}".encode()).hexdigest()
         },
     }
+    path = _error_path(message)
+    if path:
+        result["locations"] = [
+            {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": quote(path, safe="/")},
+                    "region": {"startLine": 1},
+                }
+            }
+        ]
+    return result
+
+
+def _error_path(message: str) -> str | None:
+    marker = " is "
+    if marker not in message:
+        return None
+    path = message.split(marker, 1)[0].strip()
+    if not path or " " in path or path.startswith("/"):
+        return None
+    return path
 
 
 def _score(severity: Severity) -> str:

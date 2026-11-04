@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
 from gha_audit.ignore import Ignore, parse_inline
@@ -181,22 +180,36 @@ def _yaml_in(directory: Path, root: Path) -> list[Path]:
 
 
 def _actions_under(root: Path) -> list[Path]:
+    """Collect action.yml files, including symlinks whose target stays inside root."""
     found: list[Path] = []
     base = root.resolve()
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        current = Path(dirpath)
-        if not _inside(current, base):
-            dirnames[:] = []
+    seen: set[Path] = set()
+    pending = [root]
+    while pending:
+        current = pending.pop()
+        try:
+            resolved = current.resolve()
+        except OSError:
             continue
-        dirnames[:] = sorted(
-            name for name in dirnames if name not in _SKIP_DIRS and (name == ".github" or not name.startswith("."))
-        )
-        for name in sorted(filenames):
+        if resolved in seen or not _inside(current, base):
+            continue
+        seen.add(resolved)
+        try:
+            children = sorted(current.iterdir(), key=lambda item: item.name)
+        except OSError as exc:
+            logger.warning("cannot list %s: %s", current, exc)
+            continue
+        for child in children:
+            name = child.name
+            if child.is_dir():
+                if name in _SKIP_DIRS or (name.startswith(".") and name != ".github"):
+                    continue
+                pending.append(child)
+                continue
             if name not in {"action.yml", "action.yaml"}:
                 continue
-            candidate = current / name
-            if candidate.is_file() and _inside(candidate, base):
-                found.append(candidate)
+            if child.is_file() and _inside(child, base):
+                found.append(child)
     return found
 
 
