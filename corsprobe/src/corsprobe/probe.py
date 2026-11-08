@@ -10,7 +10,7 @@ from typing import Protocol
 
 from corsprobe.checks import classify
 from corsprobe.errors import InputError, ProbeFailure
-from corsprobe.http_client import perform
+from corsprobe.http_client import AddressPins, perform
 from corsprobe.models import Case, Exchange, Failure, Finding, Report, Target
 from corsprobe.net import parse_trusted, request_url
 from corsprobe.origins import build_cases, preflight_headers
@@ -30,6 +30,9 @@ class Fetcher(Protocol):
 
 
 class HttpFetcher:
+    def __init__(self) -> None:
+        self._pins = AddressPins()
+
     def fetch(
         self,
         case: Case,
@@ -47,6 +50,7 @@ class HttpFetcher:
             timeout=timeout,
             follow_off_host=follow_off_host,
             extra_headers=extra,
+            pins=self._pins,
         )
         logger.debug("%s %s %s -> %s", target.raw, method, case.case_id, status)
         return Exchange(case.case_id, case.origin, case.host, method, status, headers, final_url)

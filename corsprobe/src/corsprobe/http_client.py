@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import socket
 import ssl
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urljoin
@@ -58,6 +59,30 @@ class Call:
 Transport = Callable[[Call], tuple[int, tuple[tuple[str, str], ...]]]
 
 
+class AddressPins:
+    """First accepted answer for each host. Later lookups cannot move it onto a LAN."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._found: dict[str, tuple[tuple[str, ...], Scope]] = {}
+
+    def resolve(self, host: str, lookup: Lookup) -> tuple[tuple[str, ...], Scope]:
+        key = host_key(host)
+        with self._lock:
+            cached = self._found.get(key)
+        if cached is not None:
+            return cached
+        resolved = guard_addresses(host, lookup(host))
+        with self._lock:
+            current = self._found.get(key)
+            if current is None:
+                self._found[key] = resolved
+                return resolved
+            if current[1] is not resolved[1]:
+                raise ProbeFailure(f"{host} changed between public and private addresses")
+            return current
+
+
 def perform(
     url: str,
     *,
@@ -68,13 +93,14 @@ def perform(
     extra_headers: tuple[tuple[str, str], ...] = (),
     transport: Transport | None = None,
     lookup: Lookup | None = None,
+    pins: AddressPins | None = None,
 ) -> tuple[int, tuple[tuple[str, str], ...], str]:
     if method not in {"GET", "OPTIONS"}:
         raise ProbeFailure("method is not allowed")
     headers = _headers(origin, extra_headers)
     send = transport or _transport
     resolve = lookup or system_lookup
-    pins: dict[str, tuple[tuple[str, ...], Scope]] = {}
+    cache = pins if pins is not None else AddressPins()
     first_host: str | None = None
     first_scope: Scope | None = None
     current = url
@@ -84,7 +110,7 @@ def perform(
         if target.raw in seen:
             raise ProbeFailure("redirect loop")
         seen.add(target.raw)
-        addresses, scope = _pinned(target.host, resolve, pins)
+        addresses, scope = cache.resolve(target.host, resolve)
         if first_host is None:
             first_host = target.host
             first_scope = scope
@@ -99,6 +125,8 @@ def perform(
             dest = parse_target(urljoin(final_url, location))
         except InputError as exc:
             raise ProbeFailure(str(exc)) from exc
+        if target.scheme == "https" and dest.scheme != "https":
+            return status, response_headers, final_url
         if not same_host(target.host, dest.host) and not follow_off_host:
             return status, response_headers, final_url
         if hop == _MAX_REDIRECTS:
@@ -129,20 +157,6 @@ def _destination(url: str) -> Target:
         return parse_target(url)
     except InputError as exc:
         raise ProbeFailure(str(exc)) from exc
-
-
-def _pinned(
-    host: str,
-    resolve: Lookup,
-    pins: dict[str, tuple[tuple[str, ...], Scope]],
-) -> tuple[tuple[str, ...], Scope]:
-    # The first answer for a host is reused for the rest of this chain.
-    key = host_key(host)
-    found = pins.get(key)
-    if found is None:
-        found = guard_addresses(host, resolve(host))
-        pins[key] = found
-    return found
 
 
 def _send(
@@ -212,6 +226,8 @@ def _open(call: Call, ip: str) -> http.client.HTTPConnection:
         plain.sock = raw
         return plain
     context = ssl.create_default_context()
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
     try:
         wrapped = context.wrap_socket(raw, server_hostname=call.host)
     except (TimeoutError, OSError, ssl.SSLError):

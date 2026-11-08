@@ -7,6 +7,7 @@ from corsprobe.models import Exchange, Finding, Severity, with_credentials
 from corsprobe.origins import CANARY_HEADER
 
 _DANGEROUS_METHODS = {"PUT", "DELETE", "PATCH", "TRACE", "CONNECT"}
+_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 _BASE = {
     "origin-reflection": Severity.HIGH,
     "null-origin": Severity.HIGH,
@@ -108,24 +109,39 @@ RULES: tuple[Rule, ...] = (
 
 
 def classify(target: str, exchanges: Sequence[Exchange]) -> tuple[Finding, ...]:
-    usable = [item for item in exchanges if item.status >= 100]
+    usable = [item for item in exchanges if _countable(item)]
+    resource = [item for item in usable if item.case_id != "preflight"]
     findings: list[Finding] = []
-    wildcard = _pick_wildcard(usable)
-    reflected = _arbitrary(usable)
+    wildcard = _pick_wildcard(resource)
+    reflected = _arbitrary(resource)
     if wildcard is not None:
         findings.append(_finding(target, "wildcard", wildcard))
     if reflected is not None:
         findings.append(_finding(target, "origin-reflection", reflected))
-    # A reflected arbitrary origin, or a wildcard, already covers the narrower probes.
-    if reflected is None and wildcard is None:
-        for case_id in _SPECIFIC:
-            hit = _first_exact(usable, case_id)
-            if hit is not None:
-                findings.append(_finding(target, case_id, hit))
+    # A broader allow-origin covers a narrower one only when it already
+    # includes credentials. Browsers ignore credentials on a wildcard, and a
+    # preflight does not make the resource response readable.
+    cover_credentials = reflected is not None and _credentials(reflected.headers)
+    covered = reflected is not None or wildcard is not None
+    for case_id in _SPECIFIC:
+        hit = _first_exact(resource, case_id)
+        if hit is None or _suppressed(hit, covered, cover_credentials):
+            continue
+        findings.append(_finding(target, case_id, hit))
     preflight = next((item for item in usable if item.case_id == "preflight"), None)
     if preflight is not None and _allows(preflight):
         findings.extend(_preflight(target, preflight))
     return tuple(findings)
+
+
+def _countable(item: Exchange) -> bool:
+    return item.status >= 200 and item.status not in _REDIRECT_STATUSES
+
+
+def _suppressed(item: Exchange, covered: bool, cover_credentials: bool) -> bool:
+    if not covered:
+        return False
+    return not (_credentials(item.headers) and not cover_credentials)
 
 
 def _finding(target: str, rule_id: str, item: Exchange) -> Finding:
@@ -188,7 +204,8 @@ def _preflight(target: str, item: Exchange) -> list[Finding]:
 
 
 def _preflight_finding(target: str, rule_id: str, item: Exchange, shown: str) -> Finding:
-    credentials = _credentials(item.headers)
+    # Browsers reject a credentialed check when the allow-origin is *.
+    credentials = _credentials(item.headers) and _acao(item) != "*"
     final_rule, severity = _apply(rule_id, credentials)
     clause = " and allows credentials" if credentials else ""
     if rule_id == "preflight-methods":
@@ -209,10 +226,9 @@ def _pick_wildcard(exchanges: Sequence[Exchange]) -> Exchange | None:
 
 
 def _arbitrary(exchanges: Sequence[Exchange]) -> Exchange | None:
-    for case_id in ("origin-reflection", "preflight"):
-        for item in exchanges:
-            if item.case_id == case_id and _reflects(item):
-                return item
+    for item in exchanges:
+        if item.case_id == "origin-reflection" and _reflects(item):
+            return item
     return None
 
 

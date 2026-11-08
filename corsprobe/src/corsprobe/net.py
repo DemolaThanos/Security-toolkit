@@ -15,6 +15,46 @@ _AMBIGUOUS = re.compile(r"^(?:0x[0-9a-f]+|\d+)(?:\.(?:0x[0-9a-f]+|\d+))*$", re.I
 _SITE_LOCAL = ipaddress.IPv6Network("fec0::/10")
 
 
+def _ipv4(first: int, second: int, third: int, fourth: int, prefix: int) -> ipaddress.IPv4Network:
+    packed = (first << 24) | (second << 16) | (third << 8) | fourth
+    return ipaddress.IPv4Network((packed, prefix))
+
+
+def _ipv6(hextets: tuple[int, ...], prefix: int) -> ipaddress.IPv6Network:
+    value = 0
+    for part in hextets:
+        value = (value << 16) | part
+    value <<= 16 * (8 - len(hextets))
+    return ipaddress.IPv6Network((value, prefix))
+
+
+# Loopback is separate. A named staging host may resolve into these only.
+_LAN_V4 = (
+    _ipv4(10, 0, 0, 0, 8),
+    _ipv4(172, 16, 0, 0, 12),
+    _ipv4(192, 168, 0, 0, 16),
+)
+_ULA = _ipv6((0xFC00,), 7)
+# is_private is not a LAN. It includes documentation, benchmarking, and 6to4,
+# and Python 3.11 and 3.12 disagree about 3fff::/20. is_global is true for the
+# 6to4 relay and for the ranges below that the stdlib lists as exceptions.
+# subtake refuses the same transition and special-use set. 2001:30::/28 is the
+# deprecated ORCHID block, which the stdlib also treats as global.
+_SPECIAL_V4: tuple[tuple[ipaddress.IPv4Network, str], ...] = ((_ipv4(192, 88, 99, 0, 24), "6to4-relay"),)
+_SPECIAL_V6: tuple[tuple[ipaddress.IPv6Network, str], ...] = (
+    (_ipv6((0x2002,), 16), "6to4"),
+    (_ipv6((0x2001,), 32), "teredo"),
+    (_ipv6((0x0064, 0xFF9B), 96), "nat64"),
+    (_ipv6((0x0064, 0xFF9B, 1), 48), "nat64"),
+    (_ipv6((0x3FFF,), 20), "documentation"),
+    (_ipv6((0x2001, 1), 32), "special-use"),
+    (_ipv6((0x2001, 3), 32), "special-use"),
+    (_ipv6((0x2001, 4, 0x0112), 48), "special-use"),
+    (_ipv6((0x2001, 0x0020), 28), "special-use"),
+    (_ipv6((0x2001, 0x0030), 28), "special-use"),
+)
+
+
 class Scope(Enum):
     PUBLIC = "public"
     PRIVATE = "private"
@@ -215,6 +255,9 @@ def _reject_reason(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str | N
     # 169.254.169.254 is link-local. is_private is also true; the link-local check wins.
     if isinstance(ip, ipaddress.IPv6Address) and ip in _SITE_LOCAL:
         return "site-local"
+    special = _special_use(ip)
+    if special is not None:
+        return special
     if ip.is_unspecified:
         return "unspecified"
     if ip.is_multicast:
@@ -225,13 +268,31 @@ def _reject_reason(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str | N
         return None
     if ip.is_reserved:
         return "reserved"
-    # Link-local was returned above. is_private is also true for that range.
-    if ip.is_private or ip.is_global:
+    # Documentation and benchmarking addresses are is_private and are not a LAN.
+    if _is_lan(ip) or ip.is_global:
         return None
     return "non-routable"
 
 
+def _special_use(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str | None:
+    if isinstance(ip, ipaddress.IPv4Address):
+        for network, reason in _SPECIAL_V4:
+            if ip in network:
+                return reason
+        return None
+    for block, reason in _SPECIAL_V6:
+        if ip in block:
+            return reason
+    return None
+
+
+def _is_lan(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if isinstance(ip, ipaddress.IPv4Address):
+        return any(ip in network for network in _LAN_V4)
+    return ip in _ULA
+
+
 def _scope(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Scope:
-    if ip.is_loopback or ip.is_private:
+    if ip.is_loopback or _is_lan(ip):
         return Scope.PRIVATE
     return Scope.PUBLIC

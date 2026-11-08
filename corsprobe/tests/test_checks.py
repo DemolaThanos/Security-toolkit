@@ -137,6 +137,38 @@ def test_wildcard_hides_narrower_probes() -> None:
     assert _ids(classify("https://app.example/api", exchanges)) == {"wildcard": "low"}
 
 
+def test_credentialed_null_survives_a_wildcard() -> None:
+    exchanges = (
+        _exchange("origin-reflection", ARBITRARY_ORIGIN, "*"),
+        _exchange("null-origin", "null", "null", credentials="true"),
+    )
+    found = _ids(classify("https://app.example/api", exchanges))
+    assert found["wildcard"] == "low"
+    assert found["null-origin"] == "critical"
+
+
+def test_uncredentialed_reflection_does_not_hide_credentialed_null() -> None:
+    exchanges = (
+        _exchange("origin-reflection", ARBITRARY_ORIGIN, ARBITRARY_ORIGIN),
+        _exchange("null-origin", "null", "null", credentials="true"),
+    )
+    found = _ids(classify("https://app.example/api", exchanges))
+    assert found == {"origin-reflection": "high", "null-origin": "critical"}
+
+
+def test_credentialed_reflection_covers_credentialed_null() -> None:
+    exchanges = (
+        _exchange("origin-reflection", ARBITRARY_ORIGIN, ARBITRARY_ORIGIN, credentials="true"),
+        _exchange("null-origin", "null", "null", credentials="true"),
+    )
+    assert _ids(classify("https://app.example/api", exchanges)) == {"origin-reflection": "critical"}
+
+
+def test_redirect_status_is_not_a_finding() -> None:
+    item = _exchange("origin-reflection", ARBITRARY_ORIGIN, ARBITRARY_ORIGIN, credentials="true", status=302)
+    assert classify("https://app.example/api", (item,)) == ()
+
+
 def test_preflight_methods_and_headers() -> None:
     item = _exchange(
         "preflight",
@@ -148,13 +180,27 @@ def test_preflight_methods_and_headers() -> None:
         ),
     )
     found = classify("https://app.example/api", (item,))
-    assert _ids(found) == {"origin-reflection": "high", "preflight-methods": "low", "preflight-headers": "low"}
+    assert _ids(found) == {"preflight-methods": "low", "preflight-headers": "low"}
     methods = next(item for item in found if item.rule_id == "preflight-methods")
     headers = next(item for item in found if item.rule_id == "preflight-headers")
     assert "DELETE" in methods.message
     assert "PATCH" in methods.message
     assert CANARY_HEADER in headers.message
     assert "authorization" in headers.message
+
+
+def test_preflight_reflection_is_not_a_readable_response() -> None:
+    preflight = _exchange(
+        "preflight",
+        ARBITRARY_ORIGIN,
+        ARBITRARY_ORIGIN,
+        credentials="true",
+        extra=(("Access-Control-Allow-Methods", "DELETE"),),
+    )
+    quiet_get = _exchange("origin-reflection", ARBITRARY_ORIGIN, "https://app.example")
+    found = classify("https://app.example/api", (quiet_get, preflight))
+    assert _ids(found) == {"preflight-methods": "medium"}
+    assert "allows credentials" in found[0].message
 
 
 def test_preflight_star_and_credentials() -> None:
@@ -169,9 +215,13 @@ def test_preflight_star_and_credentials() -> None:
         ),
     )
     found = classify("https://app.example/api", (item,))
-    assert _ids(found)["wildcard-credentials"] == "medium"
-    assert _ids(found)["preflight-methods"] == "medium"
-    assert "preflight allows *" in next(item.message for item in found if item.rule_id == "preflight-methods")
+    assert "wildcard-credentials" not in _ids(found)
+    assert _ids(found)["preflight-methods"] == "low"
+    assert "allows credentials" not in next(item.message for item in found if item.rule_id == "preflight-methods")
+    resource = _exchange("origin-reflection", ARBITRARY_ORIGIN, "*", credentials="true")
+    both = classify("https://app.example/api", (resource, item))
+    assert _ids(both)["wildcard-credentials"] == "medium"
+    assert _ids(both)["preflight-methods"] == "low"
 
 
 def test_closed_preflight_is_quiet() -> None:
