@@ -27,6 +27,7 @@ jobs:
           - tfplan-guard
           - subtake
           - gha-audit
+          - corsprobe
         python-version:
           - "3.11"
           - "3.12"

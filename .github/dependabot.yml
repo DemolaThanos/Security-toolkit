@@ -44,3 +44,11 @@ updates:
     directory: /gha-audit
     schedule:
       interval: weekly
+  - package-ecosystem: pip
+    directory: /corsprobe
+    schedule:
+      interval: weekly
+  - package-ecosystem: uv
+    directory: /corsprobe
+    schedule:
+      interval: weekly

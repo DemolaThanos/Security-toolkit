@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools==75.3.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "corsprobe"
+dynamic = ["version"]
+description = "Authorised CORS misconfiguration checks for URLs you are allowed to test."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Ademola (Hammed) Gbadamosi" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["mypy==2.4.0", "pytest==9.1.1", "ruff==0.17.2"]
+
+[project.scripts]
+corsprobe = "corsprobe.cli:cli"
+
+[project.urls]
+Repository = "https://github.com/DemolaThanos/Security-toolkit"
+
+[tool.setuptools.dynamic]
+version = { attr = "corsprobe.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+corsprobe = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["corsprobe"]
+warn_unused_ignores = true
