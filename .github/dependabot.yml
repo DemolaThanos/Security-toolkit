@@ -48,3 +48,7 @@ updates:
     directory: /corsprobe
     schedule:
       interval: weekly
+  - package-ecosystem: uv
+    directory: /corsprobe
+    schedule:
+      interval: weekly

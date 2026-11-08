@@ -13,12 +13,6 @@ _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 # inet_aton accepts hex, octal, and short forms. 0xa9fea9fe is the metadata address.
 _AMBIGUOUS = re.compile(r"^(?:0x[0-9a-f]+|\d+)(?:\.(?:0x[0-9a-f]+|\d+))*$", re.IGNORECASE)
 _SITE_LOCAL = ipaddress.IPv6Network("fec0::/10")
-_RFC1918 = (
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-)
-_ULA = ipaddress.ip_network("fc00::/7")
 
 
 class Scope(Enum):
@@ -231,18 +225,13 @@ def _reject_reason(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str | N
         return None
     if ip.is_reserved:
         return "reserved"
-    if _is_lan(ip) or ip.is_global:
+    # Link-local was returned above. is_private is also true for that range.
+    if ip.is_private or ip.is_global:
         return None
     return "non-routable"
 
 
-def _is_lan(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    if isinstance(ip, ipaddress.IPv4Address):
-        return any(ip in network for network in _RFC1918)
-    return ip in _ULA
-
-
 def _scope(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Scope:
-    if ip.is_loopback or _is_lan(ip):
+    if ip.is_loopback or ip.is_private:
         return Scope.PRIVATE
     return Scope.PUBLIC
