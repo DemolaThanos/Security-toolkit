@@ -243,8 +243,21 @@ jobs:
         with:
           python-version: ${{ inputs.python-version }}
 
+      - name: Note whether a role ARN was provided
+        id: aws-role
+        env:
+          AWS_ROLE_ARN: ${{ secrets.aws-role-arn }}
+        run: |
+          set -euo pipefail
+          # The secrets context is not allowed in an if: condition. The value is not printed.
+          if [ -n "${AWS_ROLE_ARN}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Configure AWS credentials
-        if: ${{ secrets.aws-role-arn != '' }}
+        if: steps.aws-role.outputs.present == 'true'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.aws-role-arn }}
