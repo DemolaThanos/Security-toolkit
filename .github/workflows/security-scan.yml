@@ -141,11 +141,11 @@ jobs:
       - name: Install scanner
         run: |
           set -euo pipefail
-          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz
+          curl --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 -fsSL -o /tmp/uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz
           echo "c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83  /tmp/uv.tar.gz" | sha256sum -c
           tar -xzf /tmp/uv.tar.gz -C /tmp
           install /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv
-          uv sync --frozen --directory toolkit/devsecops-scan --python "$(python -c 'import sys; print(sys.executable)')"
+          uv sync --frozen --no-build --directory toolkit/devsecops-scan --python "$(python -c 'import sys; print(sys.executable)')"
           echo "$PWD/toolkit/devsecops-scan/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Scan
@@ -244,11 +244,11 @@ jobs:
       - name: Install scanner
         run: |
           set -euo pipefail
-          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz
+          curl --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 -fsSL -o /tmp/uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz
           echo "c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83  /tmp/uv.tar.gz" | sha256sum -c
           tar -xzf /tmp/uv.tar.gz -C /tmp
           install /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv
-          uv sync --frozen --extra s3 --directory toolkit/devsecops-scan --python "$(python -c 'import sys; print(sys.executable)')"
+          uv sync --frozen --no-build --extra s3 --directory toolkit/devsecops-scan --python "$(python -c 'import sys; print(sys.executable)')"
           echo "$PWD/toolkit/devsecops-scan/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Publish
