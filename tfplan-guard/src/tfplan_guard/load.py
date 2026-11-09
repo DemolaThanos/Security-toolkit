@@ -31,10 +31,10 @@ def terraform_files(root: Path) -> tuple[list[Path], bool]:
             if not _contained_file(root, path):
                 logger.warning("skip %s", path.relative_to(root).as_posix())
                 continue
-            found.append(path)
-            if len(found) > MAX_FILES:
+            if len(found) >= MAX_FILES:
                 truncated = True
                 return found, truncated
+            found.append(path)
     return sorted(found), truncated
 
 

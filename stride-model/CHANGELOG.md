@@ -7,4 +7,4 @@
 - A closed stdout pipe closes the stream and exits 0, so a truncated pipe does not print a second traceback.
 
 - A closed output pipe exits 0. `BrokenPipeError` is handled before the `OSError` clause, which used to swallow it and exit 2.
-- A flow and a component that share an id no longer emit two threats with the same id. `rate_limited: false` is described as declared off.
+- A flow and a component that share an id no longer emit two threats with the same id. The scope suffix is incremented when that id is already used. `rate_limited: false` is described as declared off.

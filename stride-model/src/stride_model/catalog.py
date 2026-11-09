@@ -188,10 +188,18 @@ def _control(identifier: str, category: str, element: str, severity: Severity, d
 
 
 def _put(threats: dict[tuple[str, str, str], Threat], threat: Threat, scope: str) -> None:
-    # A flow and a component can share an id. The public id has to stay unique.
-    if any(item.id == threat.id for item in threats.values()):
-        threat = replace(threat, id=f"{threat.id}:{scope}")
-    threats[(scope, threat.element, threat.category)] = threat
+    # A flow and a component can share an id. The public id has to stay unique,
+    # including when ``{id}:{scope}`` is already the id of another threat.
+    taken = {item.id for item in threats.values()}
+    candidate = threat
+    if candidate.id in taken:
+        suffix = f"{threat.id}:{scope}"
+        n = 2
+        while suffix in taken:
+            n += 1
+            suffix = f"{threat.id}:{scope}:{n}"
+        candidate = replace(threat, id=suffix)
+    threats[(scope, threat.element, threat.category)] = candidate
 
 
 def _rank(severity: Severity) -> int:

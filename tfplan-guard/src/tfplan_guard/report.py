@@ -137,20 +137,37 @@ def _error_result(message: str) -> dict[str, object]:
 
 
 def _error_path(message: str) -> str | None:
-    """Best-effort path from a load error. Absolute paths are left off the SARIF URI."""
+    """Best-effort path from a load error. Absolute paths are left off the SARIF URI.
+
+    A reason can itself contain ``is`` (``plan.json: resource_changes is not a list``).
+    The path is the JSON file named at the start, not the rest of the sentence.
+    """
     for prefix in ("refusing to read ", "cannot stat ", "cannot read "):
         if message.startswith(prefix):
             path, separator, _rest = message[len(prefix) :].partition(": ")
-            if separator and path and not path.startswith(("/", "\\")):
+            if separator and _is_relative_json(path):
                 return path
             return None
-    for marker in (" is ", ": "):
-        if marker not in message:
-            continue
-        path = message.split(marker, 1)[0].strip()
-        if path and not path.startswith(("/", "\\")) and "\n" not in path and len(path) <= 240:
-            return path
+    head = message
+    if " is " in head:
+        head = head.split(" is ", 1)[0]
+    if ": " in head:
+        head = head.split(": ", 1)[0]
+    head = head.strip()
+    if _is_relative_json(head):
+        return head
     return None
+
+
+def _is_relative_json(path: str) -> bool:
+    if not path or "\n" in path or len(path) > 240 or path.startswith(("/", "\\")):
+        return False
+    if " tag " in path or path.endswith(" policy"):
+        return False
+    normalised = path.replace("\\", "/")
+    if normalised.startswith("../") or "/../" in f"/{normalised}/":
+        return False
+    return normalised.lower().endswith(".json")
 
 
 def _artifact_uri(path: str) -> str:

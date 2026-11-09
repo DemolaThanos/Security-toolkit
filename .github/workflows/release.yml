@@ -1,7 +1,7 @@
 name: release
 
-# Builds a wheel for every tool and checks the metadata. Nothing is published,
-# and this workflow has no secrets and no write permission.
+# Builds a wheel for every tool and checks the metadata. Nothing is published.
+# There are no secrets and no contents write. Artifact upload needs actions: write.
 on:
   push:
     tags:
@@ -15,6 +15,9 @@ jobs:
     name: ${{ matrix.project }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: write
     strategy:
       fail-fast: false
       matrix:

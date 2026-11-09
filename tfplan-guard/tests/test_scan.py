@@ -6,6 +6,8 @@ from typing import Any
 import pytest
 
 from tfplan_guard.cli import main
+from tfplan_guard.models import ScanReport
+from tfplan_guard.report import render
 from tfplan_guard.rules import RULES, SENSITIVE_PORTS
 from tfplan_guard.scan import scan_path
 
@@ -538,6 +540,34 @@ def test_symlink_and_file_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     report = scan_path(root, max_bytes=MAX_BYTES, suppressions=())
     assert report.errors
     assert "more than" in report.errors[0]
+    assert report.files_checked == 1
+
+
+def test_parse_error_uri_is_the_json_path() -> None:
+    located = ScanReport(
+        findings=(),
+        errors=("my plan.json: resource_changes is not a list",),
+        files_checked=0,
+    )
+    sarif = json.loads(render(located, "sarif"))
+    uri = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    assert uri == "my%20plan.json"
+
+    suppressed = ScanReport(
+        findings=(),
+        errors=("aws_ebs_volume.data tag tfplan-guard/ignore is missing a rule id",),
+        files_checked=1,
+    )
+    body = json.loads(render(suppressed, "sarif"))
+    assert "locations" not in body["runs"][0]["results"][0]
+
+    policy = ScanReport(
+        findings=(),
+        errors=("aws_iam_policy.bad policy is not valid JSON (expecting value)",),
+        files_checked=1,
+    )
+    body = json.loads(render(policy, "sarif"))
+    assert "locations" not in body["runs"][0]["results"][0]
 
 
 def test_counted_address_suppression_is_literal(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

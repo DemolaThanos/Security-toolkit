@@ -160,6 +160,47 @@ flows:
 """
 
 
+SUFFIX_COLLISION = """
+name: suffix
+description: the scope suffix is already an id
+trust_zones:
+  - id: app
+    description: Application tier
+components:
+  - id: api
+    type: process
+    zone: app
+    description: API
+    logs_actions: true
+  - id: db
+    type: data-store
+    zone: app
+    description: database
+    encrypted_at_rest: false
+flows:
+  - id: db:component
+    source: api
+    destination: db
+    protocol: http
+    authenticated: true
+    data_classes: [pii]
+  - id: db
+    source: api
+    destination: db
+    protocol: http
+    authenticated: true
+    data_classes: [pii]
+"""
+
+
+def test_scope_suffix_is_not_reused() -> None:
+    threats = generate(parse_model(SUFFIX_COLLISION))
+    ids = [item.id for item in threats]
+    assert len(ids) == len(set(ids))
+    disclosure = [item for item in ids if item.startswith("disclosure:")]
+    assert len(disclosure) == 3
+
+
 def test_flow_and_store_keep_separate_disclosure_threats() -> None:
     threats = [item for item in generate(parse_model(COLLISION)) if item.id.startswith("disclosure:db")]
     details = {item.detail for item in threats}

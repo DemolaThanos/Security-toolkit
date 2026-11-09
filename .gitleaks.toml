@@ -6,6 +6,8 @@ useDefault = true
 # These strings are fixtures. They are built so a scanner matches the shape of a
 # credential, and they are not usable secrets. Full history is scanned in CI,
 # so the allowlist has to name the placeholder that used to be written out in full.
+# Lockfiles are not excluded: a hash that is not a credential still has to be
+# reviewed, and a real token pasted into uv.lock must fail the job.
 [allowlist]
 description = "Synthetic fixtures and the AWS documentation example."
 regexTarget = "secret"
@@ -17,7 +19,4 @@ regexes = [
   '''ASIAIOSFODNN7EXAMPLE''',
   '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
   '''abcdEFGHijklMNOPqrstUVWXyz0123456789abcd''',
-]
-paths = [
-  '''(^|/)uv\.lock$''',
 ]
