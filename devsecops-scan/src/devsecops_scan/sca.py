@@ -342,12 +342,19 @@ def _severity(record: dict[str, object]) -> Severity:
             try:
                 return parse_severity(label)
             except ValueError:
-                logger.warning("unknown advisory severity %s", label)
+                logger.warning("unknown advisory severity %s", _log_token(label))
     scored = _cvss_severity(record.get("severity"))
     if scored is not None:
         return scored
-    logger.warning("advisory %s has no usable severity; treating it as high", record.get("id"))
+    logger.warning("advisory %s has no usable severity; treating it as high", _log_token(record.get("id")))
     return Severity.HIGH
+
+
+def _log_token(value: object) -> str:
+    """One log field. Newlines from an untrusted feed must not break the line."""
+    text = value if isinstance(value, str) else ""
+    cleaned = "".join(char if char.isprintable() and char not in "\r\n" else " " for char in text)
+    return cleaned[:120]
 
 
 _CVSS_V3 = re.compile(r"^CVSS:3\.[01]/(.+)$")

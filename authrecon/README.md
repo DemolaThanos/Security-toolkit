@@ -14,7 +14,7 @@ A TLS certificate failure is a finding. The header request is not retried with v
 pip install .
 ```
 
-Python 3.11 or newer. No third-party packages.
+Python 3.11 or newer. No third-party packages. `examples/README.md` explains why this tree does not ship a target.
 
 ## Usage
 
@@ -34,6 +34,10 @@ Header findings: HSTS, CSP, `X-Content-Type-Options`, clickjacking, `Referrer-Po
 TLS findings: failure of a TLS 1.2+ handshake, certificate verification errors, certificates inside 30 days of expiry, acceptance of TLS 1.0 or 1.1, and a weak cipher negotiated by this client. It does not enumerate every cipher suite the server might still offer.
 
 Observations, which do not fail the run: a Cloudflare, AWS WAF, Azure Front Door, or Akamai header when one is present, and whether a rate-limit header was on the response. A missing header is not proof that a WAF or limit is absent.
+
+## Project
+
+Version 0.2.0. See [CHANGELOG.md](CHANGELOG.md). The licence file in this directory is the repository MIT licence.
 
 ## License
 

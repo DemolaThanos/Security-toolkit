@@ -101,6 +101,10 @@ SARIF results include `partialFingerprints.primaryLocationLineHash` so a code-sc
 
 Passive DAST checks HSTS, CSP, `X-Content-Type-Options`, clickjacking controls, and `Referrer-Policy` on the final response.
 
+## Project
+
+Version 0.2.0. See [CHANGELOG.md](CHANGELOG.md). The licence file in this directory is the repository MIT licence.
+
 ## License
 
 MIT

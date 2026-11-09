@@ -9,6 +9,27 @@ venv/
 dist/
 build/
 .coverage
+.coverage.*
 htmlcov/
+coverage.xml
 *.sarif
 .DS_Store
+
+# Local secrets and key material. Never commit these.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.kdbx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# Scanner and editor leftovers.
+.sonar/
+.scannerwork/
+*.log

@@ -1,5 +1,8 @@
 # Security toolkit
 
+[![CI](https://github.com/DemolaThanos/Security-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/DemolaThanos/Security-toolkit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Reusable application-security tools. Each project stands on its own and can be copied into another repo.
 
 | Project | What it does |
@@ -13,8 +16,10 @@ Reusable application-security tools. Each project stands on its own and can be c
 | [gha-audit](gha-audit/) | Static checks for GitHub Actions workflows and composite actions, with table, JSON, and SARIF output |
 | [corsprobe](corsprobe/) | Authorised CORS checks for reflection, null and wildcard origins, bypasses, and permissive preflights |
 
-`.github/workflows/ci.yml` lints and tests every project on Python 3.11 and 3.12. `.github/workflows/security-scan.yml` is the reusable scan workflow. Report a vulnerability privately; see [SECURITY.md](SECURITY.md).
+`.github/workflows/ci.yml` lints, typechecks, runs bandit, and tests every project on Python 3.11 and 3.12, and scans the git history with gitleaks. `.github/workflows/security-scan.yml` is the reusable scan workflow. `.github/workflows/release.yml` builds wheels when a version tag is pushed. It does not publish them.
 
-## License
+Report a vulnerability privately. See [SECURITY.md](SECURITY.md). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Third-party notes: [NOTICE](NOTICE).
 
-MIT
+## Licence
+
+MIT. Copyright 2026 Ademola (Hammed) Gbadamosi.

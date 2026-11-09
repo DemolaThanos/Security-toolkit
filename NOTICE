@@ -1,0 +1,11 @@
+# Notice
+
+The MIT licence for this repository is [LICENSE](LICENSE). Copyright 2026 Ademola (Hammed) Gbadamosi.
+
+## Third-party material
+
+- [can-i-take-over-xyz](https://github.com/EdOverflow/can-i-take-over-xyz) by EdOverflow and contributors, MIT. `subtake/src/subtake/data/fingerprints.json` follows that project's public notes on error strings and which dangling names are treated as claimable. The patterns in the file were written for subtake. The attribution object in the JSON names the source.
+- PortSwigger's [CORS misconfiguration notes](https://portswigger.net/research/exploiting-cors-misconfigurations-for-bitcoins-and-bounties) and OWASP [WSTG-CLNT-07](https://wstg.owasp.org/latest/4-Web_Application_Security_Testing/11-Client-side/07-Cross_Origin_Resource_Sharing/) describe the CORS checks. corsprobe does not copy their requests. See `corsprobe/README.md`.
+- GitHub Security Lab, [Keeping your GitHub Actions and workflows secure: Untrusted input](https://securitylab.github.com/research/github-actions-untrusted-input/). gha-audit uses that published list of contexts. The code is not taken from zizmor or actionlint. See `gha-audit/README.md`.
+- The AWS documentation example access key id and secret access key are the public placeholders from the AWS general reference. They are not credentials. `.gitleaks.toml` names those placeholders so a history scan can allowlist them. The rest of the tree keeps them split, so source and tests do not store a contiguous copy.
+- [Contributor Covenant](https://www.contributor-covenant.org) 2.1, Creative Commons Attribution 4.0, adapted in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

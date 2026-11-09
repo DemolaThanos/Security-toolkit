@@ -72,6 +72,10 @@ Sensitive classes are `credential`, `payment`, `pii`, `phi`, `secret`, `session`
 
 `examples/checkout.yaml` declares authentication, TLS, logging, encryption, and a rate limit. The residual threat is denial of service at low severity, because the limit is declared and still has to be confirmed.
 
+## Project
+
+Version 0.2.0. See [CHANGELOG.md](CHANGELOG.md). The licence file in this directory is the repository MIT licence.
+
 ## License
 
 MIT

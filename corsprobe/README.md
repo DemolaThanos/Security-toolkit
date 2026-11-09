@@ -100,6 +100,10 @@ A bad certificate is a probe error, not a CORS result. Verification is not disab
 
 The prefix, suffix, null, and unescaped-dot checks follow the public description in PortSwigger's [CORS misconfiguration notes](https://portswigger.net/research/exploiting-cors-misconfigurations-for-bitcoins-and-bounties). Wildcard and credential behaviour follows the Fetch standard and OWASP [WSTG-CLNT-07](https://wstg.owasp.org/latest/4-Web_Application_Security_Testing/11-Client-side/07-Cross_Origin_Resource_Sharing/). Those pages describe the checks. The requests here are not copied from them. The special-use address set follows `subtake` in this repository, under the same MIT licence, and also refuses the deprecated ORCHID block.
 
+## Project
+
+Version 0.2.0. See [CHANGELOG.md](CHANGELOG.md). The licence file in this directory is the repository MIT licence.
+
 ## License
 
 MIT

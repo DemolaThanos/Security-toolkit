@@ -123,6 +123,10 @@ Absent IMDS metadata, absent EBS `encrypted`, and absent RDS `storage_encrypted`
 
 This is not a substitute for tfsec, Checkov, or AWS Config.
 
+## Project
+
+Version 0.2.0. See [CHANGELOG.md](CHANGELOG.md). The licence file in this directory is the repository MIT licence.
+
 ## License
 
 MIT

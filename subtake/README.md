@@ -53,6 +53,10 @@ The service is the first CNAME in the chain that matches a pattern. That name is
 
 The error strings, and which of them are claimable, follow the public notes in [can-i-take-over-xyz](https://github.com/EdOverflow/can-i-take-over-xyz) (MIT, EdOverflow and contributors). Those notes are a guide, not a proof the name can be registered. The bundled patterns cover GitHub Pages, Amazon S3, CloudFront, Elastic Load Balancing, Elastic Beanstalk, Google Cloud Storage, Heroku, several Azure endpoints, Fastly, Shopify, Surge, Bitbucket Pages, Ghost, Fly.io, Vercel, Pantheon, Firebase Hosting, Netlify, Zendesk, Help Scout, Tumblr, and Railway.
 
+## Project
+
+Version 0.2.0. See [CHANGELOG.md](CHANGELOG.md). The licence file in this directory is the repository MIT licence.
+
 ## License
 
 MIT

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==75.3.0", "wheel==0.45.1"]
+requires = ["setuptools==84.2.1", "wheel==0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,18 +8,40 @@ dynamic = ["version"]
 description = "Authorised check for dangling CNAMEs that point at claimable third-party services."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Ademola (Hammed) Gbadamosi" }]
+keywords = ["dns", "subdomain-takeover", "cname"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Typing :: Typed",
+]
 dependencies = ["dnspython==2.9.1"]
 
 [project.optional-dependencies]
-dev = ["mypy==2.4.0", "pytest==9.1.1", "ruff==0.17.2"]
+dev = [
+  "bandit==1.9.4",
+  "mypy==2.4.1",
+  "pytest==9.2.0",
+  "pytest-cov==7.1.0",
+  "ruff==0.17.4",
+]
 
 [project.scripts]
 subtake = "subtake.cli:cli"
 
 [project.urls]
+Homepage = "https://github.com/DemolaThanos/Security-toolkit"
 Repository = "https://github.com/DemolaThanos/Security-toolkit"
+Issues = "https://github.com/DemolaThanos/Security-toolkit/issues"
+Changelog = "https://github.com/DemolaThanos/Security-toolkit/blob/main/subtake/CHANGELOG.md"
 
 [tool.setuptools.dynamic]
 version = { attr = "subtake.__version__" }
@@ -32,7 +54,7 @@ subtake = ["py.typed", "data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --cov --cov-report=term-missing"
 
 [tool.ruff]
 target-version = "py311"
@@ -55,3 +77,14 @@ warn_unused_ignores = true
 [[tool.mypy.overrides]]
 module = ["dns", "dns.*"]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_empty = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]

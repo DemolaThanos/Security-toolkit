@@ -2,6 +2,10 @@
 
 Report a vulnerability in this toolkit privately to the repository owner. Do not open a public issue for a flaw in a scanner, a manifest linter, or a client that connects to a host.
 
+If a credential was committed, including in an old commit, report that privately as well. Say which file and commit, and rotate the credential. Do not paste the value into the report. History is not rewritten from a pull request. The owner has to approve that.
+
+CI runs gitleaks 8.30.1 over the full clone (`fetch-depth: 0`) with `.gitleaks.toml`. A pre-commit hook runs the same scanner on what you are about to commit. `.gitignore` ignores `.env` files, private keys, and local coverage output. That does not remove a secret that is already in history.
+
 These tools are small, offline-first checks. They are not a substitute for Gitleaks, Semgrep, Trivy, kube-linter, or testssl. Each README says what that tool will and will not do.
 
 stride-model is a STRIDE review generator for a YAML system model. It does not exchange diagrams, model authorization, or run a threat-model lifecycle.

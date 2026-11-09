@@ -100,7 +100,7 @@ def _result(finding: Finding) -> dict[str, object]:
         "locations": [
             {
                 "physicalLocation": {
-                    "artifactLocation": {"uri": quote(finding.path, safe="/:")},
+                    "artifactLocation": {"uri": _artifact_uri(finding.path)},
                     "region": {"startLine": finding.line if finding.line > 0 else 1},
                 },
                 "logicalLocations": [{"name": finding.address, "kind": "resource"}],
@@ -115,7 +115,7 @@ def _result(finding: Finding) -> dict[str, object]:
 
 
 def _error_result(message: str) -> dict[str, object]:
-    return {
+    result: dict[str, object] = {
         "ruleId": "parse-error",
         "level": "error",
         "message": {"text": message},
@@ -123,6 +123,56 @@ def _error_result(message: str) -> dict[str, object]:
             "primaryLocationLineHash": hashlib.sha256(f"parse-error\n{message}".encode()).hexdigest()
         },
     }
+    path = _error_path(message)
+    if path:
+        result["locations"] = [
+            {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": _artifact_uri(path)},
+                    "region": {"startLine": 1},
+                }
+            }
+        ]
+    return result
+
+
+def _error_path(message: str) -> str | None:
+    """Best-effort path from a load error. Absolute paths are left off the SARIF URI.
+
+    A reason can itself contain ``is`` (``plan.json: resource_changes is not a list``).
+    The path is the JSON file named at the start, not the rest of the sentence.
+    """
+    for prefix in ("refusing to read ", "cannot stat ", "cannot read "):
+        if message.startswith(prefix):
+            path, separator, _rest = message[len(prefix) :].partition(": ")
+            if separator and _is_relative_json(path):
+                return path
+            return None
+    head = message
+    if " is " in head:
+        head = head.split(" is ", 1)[0]
+    if ": " in head:
+        head = head.split(": ", 1)[0]
+    head = head.strip()
+    if _is_relative_json(head):
+        return head
+    return None
+
+
+def _is_relative_json(path: str) -> bool:
+    if not path or "\n" in path or len(path) > 240 or path.startswith(("/", "\\")):
+        return False
+    if " tag " in path or path.endswith(" policy"):
+        return False
+    normalised = path.replace("\\", "/")
+    if normalised.startswith("../") or "/../" in f"/{normalised}/":
+        return False
+    return normalised.lower().endswith(".json")
+
+
+def _artifact_uri(path: str) -> str:
+    """Percent-encode a relative path so a space survives as a SARIF URI."""
+    return quote(path.replace("\\", "/"), safe="/")
 
 
 def _score(severity: Severity) -> str:

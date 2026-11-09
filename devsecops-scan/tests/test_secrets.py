@@ -63,7 +63,9 @@ def test_committed_files_omit_contiguous_documentation_examples() -> None:
     root = Path(__file__).resolve().parents[2]
     offenders: list[str] = []
     for path in root.rglob("*"):
-        if not path.is_file() or _SKIP.intersection(path.parts):
+        # .gitleaks.toml names the documentation examples so a history scan can
+        # allowlist them. The rest of the tree must not contain those strings.
+        if not path.is_file() or path.name == ".gitleaks.toml" or _SKIP.intersection(path.parts):
             continue
         try:
             text = path.read_text(encoding="utf-8")

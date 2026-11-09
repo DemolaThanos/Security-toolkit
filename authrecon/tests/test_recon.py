@@ -88,6 +88,22 @@ def test_tls_findings() -> None:
     assert ids["tls-weak-cipher"] == "medium"
 
 
+def test_failed_handshake_still_reports_legacy_and_verify() -> None:
+    info = TlsInfo(
+        protocol=None,
+        cipher=None,
+        verified=False,
+        verify_error="certificate verify failed",
+        not_after=None,
+        subject=None,
+        legacy_accepted=("TLSv1",),
+        legacy_unknown=("TLSv1.1",),
+        handshake_error="handshake failed",
+    )
+    ids = {item.rule_id for item in tls_findings(info)}
+    assert ids == {"tls-handshake-failed", "tls-verify-failed", "tls-legacy", "tls-legacy-unknown"}
+
+
 def test_expired_certificate() -> None:
     info = TlsInfo(
         protocol="TLSv1.3",

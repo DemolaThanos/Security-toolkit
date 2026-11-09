@@ -66,6 +66,9 @@ def lint_path(root: Path, *, max_bytes: int, exclude: tuple[str, ...]) -> LintRe
 
 def _manifests(root: Path, exclude: tuple[str, ...]) -> tuple[list[Path], bool]:
     if root.is_file():
+        if not _contained_file(root.parent, root):
+            logger.warning("skip %s", root)
+            return [], False
         return [root], False
     found: list[Path] = []
     truncated = False
@@ -83,10 +86,10 @@ def _manifests(root: Path, exclude: tuple[str, ...]) -> tuple[list[Path], bool]:
             if not _contained_file(root, path):
                 logger.warning("skip %s", relative)
                 continue
-            found.append(path)
-            if len(found) > _MAX_FILES:
+            if len(found) >= _MAX_FILES:
                 truncated = True
                 return found, truncated
+            found.append(path)
     return sorted(found), truncated
 
 

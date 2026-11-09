@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import sys
 from datetime import UTC, datetime
@@ -78,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"devsecops-scan: {exc}", file=sys.stderr)
         return 2
     except BrokenPipeError:
+        with contextlib.suppress(BrokenPipeError):
+            sys.stdout.close()
         return 0
     except Exception as exc:
         if verbosity >= 2:
