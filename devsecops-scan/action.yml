@@ -47,14 +47,14 @@ runs:
         set -euo pipefail
         # Always install this digest. A uv already on PATH is not trusted.
         url="https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz"
-        for attempt in 1 2 3 4 5 6 7 8; do
-          if curl --proto '=https' --tlsv1.2 --retry 3 --retry-all-errors --retry-delay 2 -fsSL -o /tmp/uv.tar.gz "$url"; then
+        for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+          if curl --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 3 -fsSL -o /tmp/uv.tar.gz "$url"; then
             break
           fi
-          if [ "$attempt" -eq 8 ]; then
+          if [ "$attempt" -eq 12 ]; then
             exit 1
           fi
-          sleep $((attempt * 3))
+          sleep $((attempt * 4))
         done
         echo "c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83  /tmp/uv.tar.gz" | sha256sum -c
         tar -xzf /tmp/uv.tar.gz -C /tmp

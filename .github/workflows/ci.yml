@@ -46,14 +46,14 @@ jobs:
         run: |
           set -euo pipefail
           url="https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz"
-          for attempt in 1 2 3 4 5 6 7 8; do
-            if curl --proto '=https' --tlsv1.2 --retry 3 --retry-all-errors --retry-delay 2 -fsSL -o /tmp/uv.tar.gz "$url"; then
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if curl --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 3 -fsSL -o /tmp/uv.tar.gz "$url"; then
               break
             fi
-            if [ "$attempt" -eq 8 ]; then
+            if [ "$attempt" -eq 12 ]; then
               exit 1
             fi
-            sleep $((attempt * 3))
+            sleep $((attempt * 4))
           done
           echo "c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83  /tmp/uv.tar.gz" | sha256sum -c
           tar -xzf /tmp/uv.tar.gz -C /tmp
@@ -82,7 +82,7 @@ jobs:
   secrets:
     name: gitleaks
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -94,14 +94,14 @@ jobs:
         run: |
           set -euo pipefail
           url="https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
-          for attempt in 1 2 3 4 5 6 7 8; do
-            if curl --proto '=https' --tlsv1.2 --retry 3 --retry-all-errors --retry-delay 2 -fsSL -o /tmp/gitleaks.tar.gz "$url"; then
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if curl --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 3 -fsSL -o /tmp/gitleaks.tar.gz "$url"; then
               break
             fi
-            if [ "$attempt" -eq 8 ]; then
+            if [ "$attempt" -eq 12 ]; then
               exit 1
             fi
-            sleep $((attempt * 3))
+            sleep $((attempt * 4))
           done
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz" | sha256sum -c
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp
