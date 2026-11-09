@@ -72,7 +72,7 @@ def _sarif(report: ScanReport) -> dict[str, object]:
         if finding.path is not None:
             location: dict[str, object] = {
                 "physicalLocation": {
-                    "artifactLocation": {"uri": quote(finding.path, safe="/:")},
+                    "artifactLocation": {"uri": quote(finding.path.replace("\\", "/"), safe="/")},
                 }
             }
             if finding.line is not None:

@@ -57,6 +57,10 @@ Hidden directories are checked. `.git`, `.hg`, `.svn`, `node_modules`, `vendor`,
 
 Pod `securityContext` contributes only `runAsUser`, `runAsNonRoot`, `runAsGroup`, and `seccompProfile`. `privileged`, `allowPrivilegeEscalation`, capabilities, and the root filesystem are read from the container. `exclude` matches a path prefix or a glob, not a substring. Symlinks that leave the directory you passed are skipped.
 
+## Project
+
+Version 0.2.0. See [CHANGELOG.md](CHANGELOG.md). The licence file in this directory is the repository MIT licence.
+
 ## License
 
 MIT

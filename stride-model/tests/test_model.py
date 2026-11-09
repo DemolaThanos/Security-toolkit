@@ -286,5 +286,23 @@ flows:
     path = tmp_path / "huge.yaml"
     path.write_bytes(b"name: x\n" + b"a" * 1_000_001)
     assert main(["render", str(path)]) == 2
+
+
+def test_closed_stdout_exits_clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    model = tmp_path / "model.yaml"
+    model.write_text(CHECKOUT, encoding="utf-8")
+
+    class Closed:
+        def write(self, _text: str) -> int:
+            raise BrokenPipeError
+
+        def flush(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("sys.stdout", Closed())
+    assert main(["render", str(model)]) == 0
     with pytest.raises(ModelError, match="single line"):
         parse_model('name: "a\\nb"\ndescription: ok\ntrust_zones: []\ncomponents: []\n')

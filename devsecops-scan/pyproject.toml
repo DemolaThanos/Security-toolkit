@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==75.3.0", "wheel==0.45.1"]
+requires = ["setuptools==84.2.1", "wheel==0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,24 +8,42 @@ dynamic = ["version"]
 description = "Secret, SAST, dependency, and passive DAST checks for a repository."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Ademola (Hammed) Gbadamosi" }]
+keywords = ["devsecops", "sast", "secrets", "sca", "sarif"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Typing :: Typed",
+]
 dependencies = ["packaging==26.3"]
 
 [project.optional-dependencies]
-s3 = ["boto3==1.43.118"]
+s3 = ["boto3==1.43.125"]
 dev = [
-  "boto3==1.43.118",
-  "mypy==2.4.0",
-  "pytest==9.1.1",
-  "ruff==0.17.2",
+  "bandit==1.9.4",
+  "boto3==1.43.125",
+  "mypy==2.4.1",
+  "pytest==9.2.0",
+  "pytest-cov==7.1.0",
+  "ruff==0.17.4",
 ]
 
 [project.scripts]
 devsecops-scan = "devsecops_scan.cli:cli"
 
 [project.urls]
+Homepage = "https://github.com/DemolaThanos/Security-toolkit"
 Repository = "https://github.com/DemolaThanos/Security-toolkit"
+Issues = "https://github.com/DemolaThanos/Security-toolkit/issues"
+Changelog = "https://github.com/DemolaThanos/Security-toolkit/blob/main/devsecops-scan/CHANGELOG.md"
 
 [tool.setuptools.dynamic]
 version = { attr = "devsecops_scan.__version__" }
@@ -38,7 +56,7 @@ devsecops_scan = ["py.typed", "advisories/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --cov --cov-report=term-missing"
 
 [tool.ruff]
 target-version = "py311"
@@ -57,3 +75,14 @@ strict = true
 mypy_path = "src"
 packages = ["devsecops_scan"]
 warn_unused_ignores = true
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+fail_under = 77
+show_missing = true
+skip_empty = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]

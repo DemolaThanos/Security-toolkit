@@ -75,7 +75,8 @@ def _result(
         {
             "id": rule_id,
             "shortDescription": {"text": message},
-            "properties": {"security-severity": _score(severity)},
+            "defaultConfiguration": {"level": _SARIF_LEVEL[severity]},
+            "properties": {"security-severity": _score(severity), "tags": ["security"]},
         },
     )
     result: dict[str, object] = {
@@ -87,7 +88,14 @@ def _result(
         },
     }
     if path is not None:
-        result["locations"] = [{"physicalLocation": {"artifactLocation": {"uri": quote(path, safe="/:")}}}]
+        result["locations"] = [
+            {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": quote(path.replace("\\", "/"), safe="/")},
+                    "region": {"startLine": 1},
+                }
+            }
+        ]
     return result
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -56,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"gha-audit: {exc}", file=sys.stderr)
         return 2
     except BrokenPipeError:
+        with contextlib.suppress(BrokenPipeError):
+            sys.stdout.close()
         return 0
     except Exception as exc:
         if verbosity >= 2:

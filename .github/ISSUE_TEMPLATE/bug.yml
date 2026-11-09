@@ -1,0 +1,39 @@
+name: Bug
+description: A check is wrong, a command exits with the wrong code, or a documented case is missed.
+title: "[tool] "
+labels: []
+body:
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Tool
+      options:
+        - devsecops-scan
+        - k8s-harden
+        - stride-model
+        - authrecon
+        - tfplan-guard
+        - subtake
+        - gha-audit
+        - corsprobe
+        - repository CI
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Paste the command and the exit code. Redact any token before you paste output.
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Input
+      description: A minimal file or fixture. Do not include a real secret or a host you are not allowed to name.

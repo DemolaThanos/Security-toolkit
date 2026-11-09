@@ -1,0 +1,54 @@
+name: release
+
+# Builds a wheel for every tool and checks the metadata. Nothing is published,
+# and this workflow has no secrets and no write permission.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  wheels:
+    name: ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - devsecops-scan
+          - k8s-harden
+          - stride-model
+          - authrecon
+          - tfplan-guard
+          - subtake
+          - gha-audit
+          - corsprobe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        working-directory: ${{ matrix.project }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --only-binary=:all: build==1.6.1 twine==7.0.0
+          python -m build
+          python -m twine check dist/*
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.project }}-dist
+          path: ${{ matrix.project }}/dist/*
+          if-no-files-found: error

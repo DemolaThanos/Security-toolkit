@@ -113,8 +113,10 @@ def _parse(text: str) -> tuple[Service, ...]:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
         raise SubtakeError(f"fingerprint file is not JSON: {exc.msg}") from exc
-    if not isinstance(payload, dict) or set(payload) != {"services"}:
+    if not isinstance(payload, dict) or "services" not in payload or not set(payload) <= {"services", "attribution"}:
         raise SubtakeError("fingerprint file must contain a services array")
+    if "attribution" in payload:
+        _attribution(payload["attribution"])
     raw_services = payload.get("services")
     if not isinstance(raw_services, list) or not raw_services:
         raise SubtakeError("fingerprint file has no services")
@@ -150,6 +152,22 @@ def _service(raw: object, index: int, seen_ids: set[str], seen_patterns: set[str
         on_miss=_choice(body["on_miss"], service_id, "on_miss", {Verdict.SAFE, Verdict.EDGE}),
         http=rules,
     )
+
+
+def _attribution(value: object) -> None:
+    if not isinstance(value, dict):
+        raise SubtakeError("attribution must be an object")
+    extra = set(value) - {"title", "source", "licence", "note"}
+    if extra or "source" not in value:
+        raise SubtakeError("attribution must name a source")
+    for key in ("title", "source", "licence", "note"):
+        item = value.get(key)
+        if item is None:
+            continue
+        if not isinstance(item, str) or not item.strip() or len(item) > 400:
+            raise SubtakeError("attribution fields must be short text")
+        if any(ord(char) < 32 for char in item):
+            raise SubtakeError("attribution fields must be short text")
 
 
 def _object(value: object, label: str) -> dict[str, object]:

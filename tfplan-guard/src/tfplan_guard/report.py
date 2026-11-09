@@ -100,7 +100,7 @@ def _result(finding: Finding) -> dict[str, object]:
         "locations": [
             {
                 "physicalLocation": {
-                    "artifactLocation": {"uri": quote(finding.path, safe="/:")},
+                    "artifactLocation": {"uri": _artifact_uri(finding.path)},
                     "region": {"startLine": finding.line if finding.line > 0 else 1},
                 },
                 "logicalLocations": [{"name": finding.address, "kind": "resource"}],
@@ -115,7 +115,7 @@ def _result(finding: Finding) -> dict[str, object]:
 
 
 def _error_result(message: str) -> dict[str, object]:
-    return {
+    result: dict[str, object] = {
         "ruleId": "parse-error",
         "level": "error",
         "message": {"text": message},
@@ -123,6 +123,39 @@ def _error_result(message: str) -> dict[str, object]:
             "primaryLocationLineHash": hashlib.sha256(f"parse-error\n{message}".encode()).hexdigest()
         },
     }
+    path = _error_path(message)
+    if path:
+        result["locations"] = [
+            {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": _artifact_uri(path)},
+                    "region": {"startLine": 1},
+                }
+            }
+        ]
+    return result
+
+
+def _error_path(message: str) -> str | None:
+    """Best-effort path from a load error. Absolute paths are left off the SARIF URI."""
+    for prefix in ("refusing to read ", "cannot stat ", "cannot read "):
+        if message.startswith(prefix):
+            path, separator, _rest = message[len(prefix) :].partition(": ")
+            if separator and path and not path.startswith(("/", "\\")):
+                return path
+            return None
+    for marker in (" is ", ": "):
+        if marker not in message:
+            continue
+        path = message.split(marker, 1)[0].strip()
+        if path and not path.startswith(("/", "\\")) and "\n" not in path and len(path) <= 240:
+            return path
+    return None
+
+
+def _artifact_uri(path: str) -> str:
+    """Percent-encode a relative path so a space survives as a SARIF URI."""
+    return quote(path.replace("\\", "/"), safe="/")
 
 
 def _score(severity: Severity) -> str:

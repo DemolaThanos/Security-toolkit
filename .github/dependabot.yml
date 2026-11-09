@@ -1,54 +1,78 @@
 version: 2
 updates:
+  # One grouped pull request for Actions. Versions in workflows are commit SHAs.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-  - package-ecosystem: pip
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # uv updates pyproject pins and uv.lock together. A separate pip ecosystem
+  # opened a second pull request for the same bump, so it is not configured.
+  - package-ecosystem: uv
     directory: /devsecops-scan
     schedule:
       interval: weekly
-  - package-ecosystem: pip
+    groups:
+      python:
+        patterns:
+          - "*"
+  - package-ecosystem: uv
     directory: /k8s-harden
     schedule:
       interval: weekly
-  - package-ecosystem: pip
+    groups:
+      python:
+        patterns:
+          - "*"
+  - package-ecosystem: uv
     directory: /stride-model
     schedule:
       interval: weekly
-  - package-ecosystem: pip
+    groups:
+      python:
+        patterns:
+          - "*"
+  - package-ecosystem: uv
     directory: /authrecon
     schedule:
       interval: weekly
-  - package-ecosystem: pip
-    directory: /tfplan-guard
-    schedule:
-      interval: weekly
-  - package-ecosystem: pip
-    directory: /subtake
-    schedule:
-      interval: weekly
-  - package-ecosystem: uv
-    directory: /subtake
-    schedule:
-      interval: weekly
+    groups:
+      python:
+        patterns:
+          - "*"
   - package-ecosystem: uv
     directory: /tfplan-guard
     schedule:
       interval: weekly
-  - package-ecosystem: pip
-    directory: /gha-audit
+    groups:
+      python:
+        patterns:
+          - "*"
+  - package-ecosystem: uv
+    directory: /subtake
     schedule:
       interval: weekly
+    groups:
+      python:
+        patterns:
+          - "*"
   - package-ecosystem: uv
     directory: /gha-audit
     schedule:
       interval: weekly
-  - package-ecosystem: pip
-    directory: /corsprobe
-    schedule:
-      interval: weekly
+    groups:
+      python:
+        patterns:
+          - "*"
   - package-ecosystem: uv
     directory: /corsprobe
     schedule:
       interval: weekly
+    groups:
+      python:
+        patterns:
+          - "*"

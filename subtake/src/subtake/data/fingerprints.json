@@ -1,4 +1,10 @@
 {
+  "attribution": {
+    "title": "Dangling-CNAME fingerprints",
+    "source": "https://github.com/EdOverflow/can-i-take-over-xyz",
+    "licence": "MIT",
+    "note": "Error strings and which services are treated as claimable follow the public notes in can-i-take-over-xyz by EdOverflow and contributors. The patterns and verdicts in this file were written for subtake. They are not a copy of that repository's data files."
+  },
   "services": [
     {
       "id": "aws-cloudfront",

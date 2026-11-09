@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import os
 import sys
@@ -18,6 +19,15 @@ logger = logging.getLogger("stride_model")
 
 def cli() -> None:
     raise SystemExit(main())
+
+
+def _close_stdout() -> None:
+    """Drop a closed pipe without a second traceback from the interpreter."""
+    closer = getattr(sys.stdout, "close", None)
+    if closer is None:
+        return
+    with contextlib.suppress(BrokenPipeError):
+        closer()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -51,11 +61,13 @@ def main(argv: list[str] | None = None) -> int:
         for problem in exc.problems:
             print(f"stride-model: {problem}", file=sys.stderr)
         return 2
+    except BrokenPipeError:
+        # BrokenPipeError is an OSError, so it has to be handled before that clause.
+        _close_stdout()
+        return 0
     except (OSError, UnicodeError, ValueError) as exc:
         print(f"stride-model: {exc}", file=sys.stderr)
         return 2
-    except BrokenPipeError:
-        return 0
     except Exception as exc:
         if verbosity >= 2:
             raise

@@ -102,7 +102,7 @@ def _result(finding: Finding) -> dict[str, object]:
         "locations": [
             {
                 "physicalLocation": {
-                    "artifactLocation": {"uri": quote(finding.path, safe="/:")},
+                    "artifactLocation": {"uri": quote(finding.path.replace("\\", "/"), safe="/")},
                     "region": {"startLine": line},
                 }
             }
@@ -142,7 +142,7 @@ def _error_path(message: str) -> str | None:
     if marker not in message:
         return None
     path = message.split(marker, 1)[0].strip()
-    if not path or " " in path or path.startswith("/"):
+    if not path or path.startswith(("/", "\\")) or "\n" in path:
         return None
     return path
 

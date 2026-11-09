@@ -227,6 +227,18 @@ def test_fingerprint_file_is_strict(tmp_path: Path) -> None:
         load_fingerprints(write({"services": []}))
     with pytest.raises(SubtakeError, match="services array"):
         load_fingerprints(write([]))
+    credited = {
+        "attribution": {
+            "title": "Notes",
+            "source": "https://github.com/EdOverflow/can-i-take-over-xyz",
+            "licence": "MIT",
+            "note": "Error strings follow the public notes. Patterns here are not a copy.",
+        },
+        "services": [base],
+    }
+    assert len(load_fingerprints(write(credited))) == 1
+    with pytest.raises(SubtakeError, match="attribution"):
+        load_fingerprints(write({"attribution": {"title": "missing source"}, "services": [base]}))
     with pytest.raises(SubtakeError, match="not JSON"):
         path = tmp_path / "broken.json"
         path.write_text("{", encoding="utf-8")

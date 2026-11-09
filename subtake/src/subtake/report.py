@@ -117,7 +117,8 @@ def _rule(rule_id: str, item: Result) -> dict[str, object]:
         "id": rule_id,
         "shortDescription": {"text": text},
         "help": {"text": "Remove the CNAME, or point it at a resource you control."},
-        "properties": {"security-severity": _SCORE[item.verdict]},
+        "defaultConfiguration": {"level": _LEVEL[item.verdict]},
+        "properties": {"security-severity": _SCORE[item.verdict], "tags": ["security"]},
     }
 
 

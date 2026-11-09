@@ -1,0 +1,22 @@
+title = "Security toolkit"
+
+[extend]
+useDefault = true
+
+# These strings are fixtures. They are built so a scanner matches the shape of a
+# credential, and they are not usable secrets. Full history is scanned in CI,
+# so the allowlist has to name the placeholder that used to be written out in full.
+[allowlist]
+description = "Synthetic fixtures and the AWS documentation example."
+regexTarget = "secret"
+regexes = [
+  '''glpat-abcdefghijklmnopqrst''',
+  '''AKIATESTKEY000000001''',
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''ASIAIOSFODNN7EXAMPLE''',
+  '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
+  '''abcdEFGHijklMNOPqrstUVWXyz0123456789abcd''',
+]
+paths = [
+  '''(^|/)uv\.lock$''',
+]

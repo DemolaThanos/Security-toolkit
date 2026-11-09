@@ -132,6 +132,10 @@ A file that cannot be parsed is an error. The command exits 2. It is not reporte
 
 This is not a substitute for zizmor, actionlint, or OpenSSF Scorecard.
 
+## Project
+
+Version 0.2.0. See [CHANGELOG.md](CHANGELOG.md). The licence file in this directory is the repository MIT licence.
+
 ## License
 
 MIT

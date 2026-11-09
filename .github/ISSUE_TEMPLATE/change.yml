@@ -1,0 +1,31 @@
+name: Change
+description: A rule, an output field, or a documented limitation that should change.
+title: "[tool] "
+body:
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Tool
+      options:
+        - devsecops-scan
+        - k8s-harden
+        - stride-model
+        - authrecon
+        - tfplan-guard
+        - subtake
+        - gha-audit
+        - corsprobe
+        - repository
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: What should change
+    validations:
+      required: true
+  - type: textarea
+    id: out
+    attributes:
+      label: What this should not do
+      description: New checks stay inside the tool's documented scope.
