@@ -140,7 +140,13 @@ jobs:
 
       - name: Install scanner
         run: |
-          python -m pip install --disable-pip-version-check --only-binary=:all: ./toolkit/devsecops-scan
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz
+          echo "c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83  /tmp/uv.tar.gz" | sha256sum -c
+          tar -xzf /tmp/uv.tar.gz -C /tmp
+          install /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv
+          uv sync --frozen --directory toolkit/devsecops-scan --python "$(python -c 'import sys; print(sys.executable)')"
+          echo "$PWD/toolkit/devsecops-scan/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Scan
         env:
@@ -237,7 +243,13 @@ jobs:
 
       - name: Install scanner
         run: |
-          python -m pip install --disable-pip-version-check --only-binary=:all: "./toolkit/devsecops-scan[s3]"
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz
+          echo "c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83  /tmp/uv.tar.gz" | sha256sum -c
+          tar -xzf /tmp/uv.tar.gz -C /tmp
+          install /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv
+          uv sync --frozen --extra s3 --directory toolkit/devsecops-scan --python "$(python -c 'import sys; print(sys.executable)')"
+          echo "$PWD/toolkit/devsecops-scan/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Publish
         env:

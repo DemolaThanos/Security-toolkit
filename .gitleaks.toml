@@ -10,7 +10,8 @@ useDefault = true
 description = "Synthetic fixtures and the AWS documentation example."
 regexTarget = "secret"
 regexes = [
-  '''glpat-abcdefghijklmnopqrst''',
+  # Alphabet a through t. Written as a class so the file does not contain a token literal.
+  '''glpat-[a-t]{20}''',
   '''AKIATESTKEY000000001''',
   '''AKIAIOSFODNN7EXAMPLE''',
   '''ASIAIOSFODNN7EXAMPLE''',

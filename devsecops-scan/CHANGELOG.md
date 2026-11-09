@@ -7,4 +7,3 @@
 - A closed stdout pipe closes the stream and exits 0, so a truncated pipe does not print a second traceback.
 
 - Advisory severity warnings strip control characters from the feed, so a newline in an OSV record cannot break the log line.
-- `examples/risky.py` is an input that the `python-eval` rule is meant to flag.

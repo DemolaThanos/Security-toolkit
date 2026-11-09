@@ -20,8 +20,6 @@ devsecops-scan scan . --fail-on high --format sarif --output devsecops-scan.sari
 devsecops-scan scan . --dast-url https://app.example --i-am-authorized
 ```
 
-`examples/risky.py` is a file the `python-eval` rule is supposed to flag. It is not a sample of production code.
-
 `--i-am-authorized` (or `DEVSECOPS_SCAN_DAST_AUTHORIZED=1`) is required before any DAST request. The scanner resolves each host once and connects to those addresses. A redirect back to a host it already resolved reuses that answer, so a second DNS reply cannot move the connection. It refuses link-local addresses, including cloud metadata, and non-canonical spellings such as hex or octal. A TLS failure stays a failure: verification is not turned off for a second try. Redirects may continue to another public host, up to five hops. A redirect into a private or link-local address is refused.
 
 Exit codes: `0` nothing at or above the threshold, `1` findings, `2` the scan did not finish. A path that yields no readable file exits 2. That covers an empty directory, an exclude that matches every file, and a tree whose files are all over `max_bytes`. When `--dast-url` is set, the header check still runs.
