@@ -238,10 +238,13 @@ def test_symlink_outside_the_root_is_not_read(tmp_path: Path) -> None:
     outside.write_text("eval(user_input)\n", encoding="utf-8")
     root = tmp_path / "repo"
     root.mkdir()
-    (root / "link.py").symlink_to(outside)
+    link = root / "link.py"
+    link.symlink_to(outside)
     (root / "local.py").write_text("value = 1\n", encoding="utf-8")
     report = run_scan(_settings(root))
     assert all(item.rule_id != "python-eval" for item in report.findings)
+    with pytest.raises(ScanError, match="no files were scanned"):
+        run_scan(_settings(link))
 
 
 def test_requirement_include_is_confined(tmp_path: Path) -> None:

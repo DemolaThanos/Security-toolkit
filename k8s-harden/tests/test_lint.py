@@ -334,9 +334,13 @@ spec:
     )
     root = tmp_path / "manifests"
     root.mkdir()
-    (root / "escape.yaml").symlink_to(outside)
+    link = root / "escape.yaml"
+    link.symlink_to(outside)
     report = lint_path(root, max_bytes=1_000_000, exclude=())
     assert "privileged" not in {item.rule_id for item in report.findings}
+    direct = lint_path(link, max_bytes=1_000_000, exclude=())
+    assert direct.findings == ()
+    assert direct.files_checked == 0
 
     sealed = root / "sealed.yaml"
     _write(

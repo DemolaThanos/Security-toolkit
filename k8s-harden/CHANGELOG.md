@@ -7,3 +7,4 @@
 - A closed stdout pipe closes the stream and exits 0, so a truncated pipe does not print a second traceback.
 
 - SARIF rules include `defaultConfiguration.level`, and result locations include a start line. Artifact URIs percent-encode spaces.
+- A symlink passed as the file to check is skipped when it resolves outside its parent directory. The manifest cap stops at 10,000 files.

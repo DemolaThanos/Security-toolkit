@@ -7,3 +7,4 @@
 - A closed stdout pipe closes the stream and exits 0, so a truncated pipe does not print a second traceback.
 
 - `examples/README.md` states that this tree has no sample target. The command still refuses to run without `--i-am-authorized`.
+- A failed TLS 1.2 handshake still reports certificate verification and any TLS 1.0 or 1.1 acceptance the probe recorded.

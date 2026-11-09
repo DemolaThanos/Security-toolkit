@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from stride_model.models import PROTECTED, Flow, Model, Severity, Threat
 from stride_model.parse import is_sensitive
 
@@ -68,22 +70,23 @@ def generate(model: Model) -> tuple[Threat, ...]:
                 "flow",
             )
         if dest.type == "process" and _internet_facing(model, flow):
-            residual = dest.rate_limited is True
+            if dest.rate_limited is True:
+                limit = "Rate limiting is declared; confirm it sits on this boundary."
+                severity = Severity.LOW
+            elif dest.rate_limited is False:
+                limit = "Rate limiting is declared off."
+                severity = Severity.MEDIUM
+            else:
+                limit = "No rate limit is declared."
+                severity = Severity.MEDIUM
             _put(
                 threats,
                 Threat(
                     id=f"dos:{dest.id}",
                     category="dos",
                     element=dest.id,
-                    severity=Severity.LOW if residual else Severity.MEDIUM,
-                    detail=(
-                        f"{dest.id} accepts traffic from an external zone. "
-                        + (
-                            "Rate limiting is declared; confirm it sits on this boundary."
-                            if residual
-                            else "No rate limit is declared."
-                        )
-                    ),
+                    severity=severity,
+                    detail=f"{dest.id} accepts traffic from an external zone. {limit}",
                     mitigation=_MITIGATION["dos"],
                 ),
                 "component",
@@ -185,6 +188,9 @@ def _control(identifier: str, category: str, element: str, severity: Severity, d
 
 
 def _put(threats: dict[tuple[str, str, str], Threat], threat: Threat, scope: str) -> None:
+    # A flow and a component can share an id. The public id has to stay unique.
+    if any(item.id == threat.id for item in threats.values()):
+        threat = replace(threat, id=f"{threat.id}:{scope}")
     threats[(scope, threat.element, threat.category)] = threat
 
 

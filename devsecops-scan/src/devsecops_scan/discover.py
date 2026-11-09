@@ -92,8 +92,12 @@ def iter_files(root: Path, *, exclude: tuple[str, ...]) -> Iterator[Path]:
     directories, including ``.github``, are scanned.
     """
     if root.is_file():
-        if not _excluded(root.name, exclude):
+        # The file is the scan root, so containment is against its parent.
+        # Otherwise a symlink argument resolves to itself and the outside target is read.
+        if not _excluded(root.name, exclude) and _contained_file(root.parent, root):
             yield root
+        elif not _excluded(root.name, exclude):
+            logger.warning("skip %s", root)
         return
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         dirnames[:] = [name for name in dirnames if name not in SKIP_DIRS]

@@ -7,3 +7,4 @@
 - A closed stdout pipe closes the stream and exits 0, so a truncated pipe does not print a second traceback.
 
 - Advisory severity warnings strip control characters from the feed, so a newline in an OSV record cannot break the log line.
+- A symlink passed as the scan target is skipped when it resolves outside its parent directory.

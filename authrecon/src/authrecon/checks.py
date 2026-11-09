@@ -76,6 +76,14 @@ def tls_findings(info: TlsInfo, *, now: datetime | None = None) -> list[Finding]
     findings: list[Finding] = []
     if info.handshake_error and info.protocol is None:
         findings.append(Finding("tls-handshake-failed", Severity.HIGH, info.handshake_error))
+        # The TLS 1.2 handshake failed. The legacy probes and the verify error
+        # were still collected and have to be reported.
+        if info.verify_error:
+            findings.append(Finding("tls-verify-failed", Severity.HIGH, info.verify_error[:240]))
+        for protocol in info.legacy_accepted:
+            findings.append(Finding("tls-legacy", Severity.HIGH, f"server accepted {protocol}"))
+        for protocol in info.legacy_unknown:
+            findings.append(Finding("tls-legacy-unknown", Severity.INFO, f"could not confirm {protocol} is disabled"))
         return findings
     if info.protocol and info.protocol not in {"TLSv1.2", "TLSv1.3"}:
         findings.append(Finding("tls-old-protocol", Severity.HIGH, f"negotiated {info.protocol}"))

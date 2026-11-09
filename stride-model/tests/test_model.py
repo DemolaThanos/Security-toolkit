@@ -161,11 +161,12 @@ flows:
 
 
 def test_flow_and_store_keep_separate_disclosure_threats() -> None:
-    threats = [item for item in generate(parse_model(COLLISION)) if item.id == "disclosure:db"]
+    threats = [item for item in generate(parse_model(COLLISION)) if item.id.startswith("disclosure:db")]
     details = {item.detail for item in threats}
     assert any("unprotected" in detail for detail in details)
     assert any("encryption at rest" in detail for detail in details)
     assert len(threats) == 2
+    assert len({item.id for item in threats}) == 2
 
 
 def test_store_sensitivity_without_a_flow() -> None:
