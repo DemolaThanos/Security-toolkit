@@ -16,7 +16,7 @@ dependencies = ["packaging==26.3"]
 s3 = ["boto3==1.43.118"]
 dev = [
   "boto3==1.43.118",
-  "mypy==2.4.0",
+  "mypy==2.4.1",
   "pytest==9.1.1",
   "ruff==0.17.2",
 ]
